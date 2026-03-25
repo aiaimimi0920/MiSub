@@ -3,15 +3,21 @@ import { computed } from 'vue';
 import { formatBytes } from '../../lib/utils.js';
 import { TIMING } from '../../constants/timing.js';
 import Switch from './Switch.vue';
+import { formatDate } from '../../utils/format-utils.js';
+import { canManuallyProbeSource, getSourceProbeSummary, shouldShowSourceProbeNotice } from '../../shared/source-utils.js';
 
 const props = defineProps({
   misub: {
     type: Object,
     required: true
+  },
+  isReprobing: {
+    type: Boolean,
+    default: false
   }
 });
 
-const emit = defineEmits(['delete', 'change', 'update', 'edit', 'preview', 'qrcode']);
+const emit = defineEmits(['delete', 'change', 'update', 'edit', 'preview', 'qrcode', 'reprobe']);
 
 const getProtocol = (url) => {
   try {
@@ -81,6 +87,24 @@ const expiryInfo = computed(() => {
         style: style
     };
 });
+
+const probeSummary = computed(() => getSourceProbeSummary(props.misub));
+const showProbeNotice = computed(() => shouldShowSourceProbeNotice(props.misub));
+
+const probeBadgeStyle = computed(() => {
+  switch (probeSummary.value.tone) {
+    case 'warning': return 'bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/20';
+    case 'danger': return 'bg-red-500/10 text-red-600 dark:text-red-300 border border-red-500/20';
+    case 'success': return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20';
+    default: return 'bg-gray-500/10 text-gray-500 dark:text-gray-400 border border-gray-500/20';
+  }
+});
+
+const probeTimeText = computed(() => {
+  if (!props.misub?.last_probe_at) return '';
+  return `最近探测 ${formatDate(props.misub.last_probe_at, 'relative')}`;
+});
+const canReprobe = computed(() => canManuallyProbeSource(props.misub));
 </script>
 
 <template>
@@ -101,6 +125,9 @@ const expiryInfo = computed(() => {
             <span class="text-[10px] font-bold tracking-wider px-2 py-0.5 rounded-full uppercase" :class="protocolStyle.style">
               {{ protocolStyle.text }}
             </span>
+            <span v-if="showProbeNotice" class="text-[10px] font-semibold px-2 py-0.5 rounded-full" :class="probeBadgeStyle">
+              {{ probeSummary.label }}
+            </span>
             <span v-if="expiryInfo" class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 dark:bg-white/5 border border-transparent" :class="expiryInfo.style">
               {{ expiryInfo.daysRemaining }}
             </span>
@@ -114,6 +141,9 @@ const expiryInfo = computed(() => {
 	<div class="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
 		<button @click.stop="emit('preview')" class="p-2.5 rounded-full hover:bg-primary-50 dark:hover:bg-white/10 text-gray-400 hover:text-primary-500 transition-colors min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 flex items-center justify-center" title="预览节点" aria-label="预览节点">
 			<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+		</button>
+		<button v-if="canReprobe" @click.stop="emit('reprobe')" :disabled="isReprobing" class="p-2.5 rounded-full hover:bg-amber-50 dark:hover:bg-amber-500/10 text-gray-400 hover:text-amber-500 transition-colors min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 flex items-center justify-center disabled:opacity-50" :title="isReprobing ? '探测中' : '重新探测来源'" aria-label="重新探测来源">
+			<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" :class="{ 'animate-spin': isReprobing }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5v5h5m10-5v5h-5M5.5 19.5a8 8 0 0013.62-3M18.5 4.5A8 8 0 005.38 7.5" /></svg>
 		</button>
 		<button @click.stop="emit('qrcode')" class="p-2.5 rounded-full hover:bg-primary-50 dark:hover:bg-white/10 text-gray-400 hover:text-primary-500 transition-colors min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 flex items-center justify-center" title="显示二维码" aria-label="显示二维码">
 			<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -136,6 +166,11 @@ const expiryInfo = computed(() => {
           <svg class="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
         </div>
         <input type="text" :value="misub.url" readonly class="w-full text-xs text-gray-500 dark:text-gray-400 bg-gray-50/50 dark:bg-black/20 misub-radius-md pl-9 pr-3 py-2 border border-transparent focus:border-primary-500/30 focus:bg-white dark:focus:bg-black/40 focus:outline-none transition-all font-mono truncate" />
+      </div>
+
+      <div v-if="showProbeNotice" class="mb-3 text-[11px] leading-5 misub-radius-md px-3 py-2 bg-amber-50/80 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200 border border-amber-500/15">
+        <div>{{ probeSummary.description }}</div>
+        <div v-if="probeTimeText" class="mt-1 opacity-80">{{ probeTimeText }}</div>
       </div>
 
       <!-- Traffic Usage -->
@@ -185,5 +220,3 @@ const expiryInfo = computed(() => {
     </div>
   </div>
 </template>
-
-

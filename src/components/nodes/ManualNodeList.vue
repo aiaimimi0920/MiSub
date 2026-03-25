@@ -2,6 +2,8 @@
 import { computed } from 'vue';
 import { extractHostAndPort } from '../../lib/utils.js';
 import { useToastStore } from '../../stores/toast.js';
+import { formatDate } from '../../utils/format-utils.js';
+import { canManuallyProbeSource, getSourceProbeSummary, shouldShowSourceProbeNotice } from '../../shared/source-utils.js';
 
 const props = defineProps({
   node: {
@@ -15,10 +17,11 @@ const props = defineProps({
   isSelectionMode: Boolean,
   isSelected: Boolean,
   pingResult: Object,
-  isPinging: Boolean
+  isPinging: Boolean,
+  isReprobing: Boolean
 });
 
-const emit = defineEmits(['delete', 'edit', 'toggle-select', 'filter-group', 'ping']);
+const emit = defineEmits(['delete', 'edit', 'toggle-select', 'filter-group', 'ping', 'reprobe']);
 const { showToast } = useToastStore();
 
 const getProtocol = (url) => {
@@ -68,6 +71,14 @@ const protocolStyle = computed(() => {
 	return styles[p] || styles['unknown'];
 });
 
+const probeSummary = computed(() => getSourceProbeSummary(props.node));
+const showProbeNotice = computed(() => shouldShowSourceProbeNotice(props.node));
+const probeTimeText = computed(() => {
+  if (!props.node?.last_probe_at) return '';
+  return `最近探测 ${formatDate(props.node.last_probe_at, 'relative')}`;
+});
+const canReprobe = computed(() => canManuallyProbeSource(props.node));
+
 const copyToClipboard = async (text) => {
   try {
     await navigator.clipboard.writeText(text);
@@ -115,6 +126,15 @@ const copyToClipboard = async (text) => {
               >
                 {{ protocolStyle.text }}
               </div>
+              <div v-if="showProbeNotice"
+                class="text-[10px] font-semibold px-1.5 py-0.5 misub-radius-md shrink-0"
+                :class="{
+                  'bg-amber-500/15 text-amber-600 dark:text-amber-300': probeSummary.tone === 'warning',
+                  'bg-red-500/15 text-red-600 dark:text-red-300': probeSummary.tone === 'danger',
+                  'bg-gray-500/15 text-gray-500 dark:text-gray-300': !['warning', 'danger'].includes(probeSummary.tone)
+                }">
+                {{ probeSummary.label }}
+              </div>
               <div v-if="node.group"
                 class="text-[10px] font-medium px-1.5 py-0.5 misub-radius-md bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 truncate max-w-[100px] hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                 @click.stop="$emit('filter-group', node.group)">
@@ -126,6 +146,9 @@ const copyToClipboard = async (text) => {
             <div v-if="!isSelectionMode" class="flex items-center gap-0.5 shrink-0">
               <button @click.stop="emit('ping')" class="p-1.5 text-gray-400 hover:text-green-500 transition-colors" title="测速" :disabled="isPinging" :class="{ 'animate-pulse text-green-500': isPinging }">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              </button>
+              <button v-if="canReprobe" @click.stop="emit('reprobe')" class="p-1.5 text-gray-400 hover:text-amber-500 transition-colors disabled:opacity-50" title="重新探测来源" :disabled="isReprobing">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" :class="{ 'animate-spin': isReprobing }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5v5h5m10-5v5h-5M5.5 19.5a8 8 0 0013.62-3M18.5 4.5A8 8 0 005.38 7.5" /></svg>
               </button>
               <button @click.stop="copyToClipboard(node.url)" class="p-1.5 text-gray-400 hover:text-primary-500 transition-colors" title="复制链接">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
@@ -158,6 +181,10 @@ const copyToClipboard = async (text) => {
 
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 font-mono">
             {{ hostAndPort.host || 'N/A' }}:{{ hostAndPort.port || 'N/A' }}
+          </p>
+          <p v-if="showProbeNotice" class="mt-1 text-[11px] text-amber-700 dark:text-amber-200">
+            {{ probeSummary.description }}
+            <span v-if="probeTimeText" class="block opacity-80">{{ probeTimeText }}</span>
           </p>
         </div>
       </div>
@@ -194,6 +221,15 @@ const copyToClipboard = async (text) => {
         <p class="font-semibold text-sm text-gray-800 dark:text-gray-100 truncate" :title="node.name">
           {{ node.name || '未命名节点' }}
         </p>
+        <div v-if="showProbeNotice"
+             class="text-[10px] font-semibold px-1.5 py-0.5 misub-radius-md shrink-0"
+             :class="{
+               'bg-amber-500/15 text-amber-600 dark:text-amber-300': probeSummary.tone === 'warning',
+               'bg-red-500/15 text-red-600 dark:text-red-300': probeSummary.tone === 'danger',
+               'bg-gray-500/15 text-gray-500 dark:text-gray-300': !['warning', 'danger'].includes(probeSummary.tone)
+             }">
+          {{ probeSummary.label }}
+        </div>
         <div v-if="pingResult" class="text-[10px] font-medium px-1.5 py-0.5 misub-radius-md shrink-0 flex flex-row items-center gap-1"
              :class="{
                 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400': pingResult.status === 'ok' && pingResult.latency < 300,
@@ -228,6 +264,15 @@ const copyToClipboard = async (text) => {
           :class="{ 'animate-pulse text-green-500': isPinging }"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        </button>
+        <button
+          v-if="canReprobe"
+          @click.stop="emit('reprobe')"
+          class="p-2 misub-radius-md hover:bg-amber-500/10 text-gray-400 hover:text-amber-500 min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 flex items-center justify-center transition-colors disabled:opacity-50"
+          title="重新探测来源"
+          :disabled="isReprobing"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" :class="{ 'animate-spin': isReprobing }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5v5h5m10-5v5h-5M5.5 19.5a8 8 0 0013.62-3M18.5 4.5A8 8 0 005.38 7.5" /></svg>
         </button>
         <button 
           @click.stop="copyToClipboard(node.url)" 

@@ -25,6 +25,12 @@
 import { StorageFactory } from '../../storage-adapter.js';
 import { createJsonResponse, escapeHtml } from '../utils.js';
 import { KV_KEY_SUBS, KV_KEY_PROFILES, KV_KEY_SETTINGS } from '../config.js';
+import {
+    inferSourceKind,
+    isBareProxyInput,
+    isSubscriptionInput,
+    normalizeDirectProxyInput
+} from '../../../src/shared/source-utils.js';
 
 // ==================== 存储与配置 ====================
 
@@ -96,17 +102,23 @@ function extractNodeUrls(text) {
     const protocols = [
         'ss://', 'ssr://', 'vmess://', 'vless://', 'trojan://',
         'hysteria://', 'hysteria2://', 'hy2://', 'tuic://', 'snell://',
-        'anytls://', 'wireguard://', 'socks5://', 'socks5-tls://'
+        'anytls://', 'wireguard://', 'socks5://', 'socks5-tls://',
+        'http://', 'https://'
     ];
     const urls = [];
     const lines = text.split('\n');
 
     for (const line of lines) {
         const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (isBareProxyInput(trimmed)) {
+            urls.push(normalizeDirectProxyInput(trimmed));
+            continue;
+        }
         const lowerTrimmed = trimmed.toLowerCase();
         for (const protocol of protocols) {
             if (lowerTrimmed.startsWith(protocol)) {
-                urls.push(trimmed);
+                urls.push(normalizeDirectProxyInput(trimmed));
                 break;
             }
         }
@@ -1270,13 +1282,16 @@ async function handleImportCommand(chatId, userId, args, env) {
         if (args.length === 0) {
             await sendTelegramMessage(chatId,
                 '📥 <b>导入节点</b>\n\n' +
-                '用法：/import <Base64 或订阅链接>\n\n' +
+                '用法：/import <Base64、订阅链接或节点链接>\n\n' +
                 '支持：\n' +
                 '• Base64 编码的节点\n' +
-                '• 订阅链接（http/https）\n\n' +
+                '• 订阅链接（http/https）\n' +
+                '• 代理节点链接（vmess/vless/trojan/socks5/http）\n' +
+                '• 住宅代理裸格式（user:pass@host:port）\n\n' +
                 '示例：\n' +
                 '/import c3M6Ly9...\n' +
-                '/import https://example.com/sub',
+                '/import https://example.com/sub\n' +
+                '/import f33d186d:3ce4591a@res19.kookeey.info:16960',
                 env
             );
             return;
@@ -1285,8 +1300,8 @@ async function handleImportCommand(chatId, userId, args, env) {
         const input = args.join(' ').trim();
         let nodeUrls = [];
 
-        // 判断是订阅链接还是 Base64
-        if (input.startsWith('http://') || input.startsWith('https://')) {
+        // 判断是订阅链接还是 Base64 / 节点直输
+        if (isSubscriptionInput(input)) {
             // 获取订阅内容
             await sendTelegramMessage(chatId, '⏳ 正在获取订阅内容...', env);
 
@@ -1341,10 +1356,13 @@ async function handleImportCommand(chatId, userId, args, env) {
 
         const addedNodes = [];
         for (const url of nodeUrls) {
+            const normalizedUrl = normalizeDirectProxyInput(url);
             const node = {
                 id: generateId(),
-                name: extractNodeName(url),
-                url: url,
+                kind: inferSourceKind(normalizedUrl),
+                name: extractNodeName(normalizedUrl),
+                input: normalizedUrl,
+                url: normalizedUrl,
                 enabled: true,
                 source: 'telegram',
                 telegram_user_id: userId,

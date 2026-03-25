@@ -6,6 +6,10 @@
 import { StorageFactory } from '../../storage-adapter.js';
 import { createJsonResponse, createErrorResponse } from '../utils.js';
 import { parseNodeList } from '../utils/node-parser.js';
+import {
+    isSubscriptionSource,
+    normalizeSourceCollection
+} from '../../../src/shared/source-utils.js';
 
 // 创建用于全局匹配的协议正则表达式
 const NODE_PROTOCOL_GLOBAL_REGEX = new RegExp('^(ss|ssr|vmess|vless|trojan|hysteria2?|hy|hy2|tuic|anytls|socks5|socks):\\/\\/', 'gm');
@@ -286,7 +290,7 @@ export async function handleNodeCountRequest(request, env) {
             // 只有在至少获取到一个有效信息时，才更新数据库
             if (result.userInfo || result.count > 0) {
                 const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
-                const originalSubs = await storageAdapter.get('misub_subscriptions_v1') || [];
+                const originalSubs = normalizeSourceCollection(await storageAdapter.get('misub_subscriptions_v1') || []);
                 const allSubs = JSON.parse(JSON.stringify(originalSubs)); // 深拷贝
                 const subToUpdate = allSubs.find(s => s.url === subUrl);
 
@@ -335,11 +339,11 @@ export async function handleBatchUpdateNodesRequest(request, env) {
         }
 
         const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
-        const allSubscriptions = await storageAdapter.get('misub_subscriptions_v1') || [];
+        const allSubscriptions = normalizeSourceCollection(await storageAdapter.get('misub_subscriptions_v1') || []);
 
         // 过滤出要更新的订阅
         const targetSubscriptions = allSubscriptions.filter(sub =>
-            subscriptionIds.includes(sub.id) && sub.enabled && sub.url && sub.url.startsWith('http')
+            subscriptionIds.includes(sub.id) && sub.enabled && isSubscriptionSource(sub)
         );
 
         if (targetSubscriptions.length === 0) {

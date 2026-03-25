@@ -1,4 +1,9 @@
 import { NODE_PROTOCOL_PREFIXES } from '@/constants/nodeProtocols.js';
+import {
+    isProxyURIInput,
+    isSubscriptionInput,
+    normalizeDirectProxyInput
+} from '@/shared/source-utils.js';
 
 /**
  * 验证工具函数
@@ -11,14 +16,7 @@ import { NODE_PROTOCOL_PREFIXES } from '@/constants/nodeProtocols.js';
  * @returns {boolean} 是否为有效的URL
  */
 export function isValidUrl(url) {
-    if (!url || typeof url !== 'string') return false;
-
-    try {
-        const urlObj = new URL(url);
-        return ['http:', 'https:'].includes(urlObj.protocol);
-    } catch {
-        return false;
-    }
+    return isSubscriptionInput(url);
 }
 
 /**
@@ -28,9 +26,8 @@ export function isValidUrl(url) {
  */
 export function isValidNodeUrl(nodeUrl) {
     if (!nodeUrl || typeof nodeUrl !== 'string') return false;
-
-    // 检查是否为支持的协议
-    return NODE_PROTOCOL_PREFIXES.some(protocol => nodeUrl.startsWith(protocol));
+    const normalized = normalizeDirectProxyInput(nodeUrl);
+    return isProxyURIInput(normalized) || NODE_PROTOCOL_PREFIXES.some(protocol => normalized.startsWith(protocol));
 }
 
 /**

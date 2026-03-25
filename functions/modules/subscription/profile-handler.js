@@ -6,6 +6,12 @@ import { applyNodeTransformPipeline } from '../../utils/node-transformer.js';
 import { KV_KEY_SUBS, KV_KEY_PROFILES } from '../config.js';
 import { fetchSubscriptionNodes } from './node-fetcher.js';
 import { applyManualNodeName } from '../utils/node-cleaner.js';
+import {
+    getSourceInput,
+    isProxyURISource,
+    isSubscriptionSource,
+    normalizeSourceCollection
+} from '../../../src/shared/source-utils.js';
 
 /**
  * 处理订阅组模式的节点获取
@@ -21,7 +27,7 @@ export async function handleProfileMode(request, env, profileId, userAgent, appl
 
     // 获取订阅组和所有数据
     const allProfiles = await storageAdapter.get(KV_KEY_PROFILES) || [];
-    const allSubscriptions = await storageAdapter.get(KV_KEY_SUBS) || [];
+    const allSubscriptions = normalizeSourceCollection(await storageAdapter.get(KV_KEY_SUBS) || []);
 
     // 查找匹配的订阅组
     const profile = allProfiles.find(p => (p.customId && p.customId === profileId) || p.id === profileId);
@@ -40,7 +46,7 @@ export async function handleProfileMode(request, env, profileId, userAgent, appl
     if (Array.isArray(profileSubIds)) {
         profileSubIds.forEach(id => {
             const sub = misubMap.get(id);
-            if (sub && sub.enabled && sub.url.startsWith('http')) {
+            if (sub && sub.enabled && isSubscriptionSource(sub)) {
                 targetMisubs.push(sub);
             }
         });
@@ -51,22 +57,23 @@ export async function handleProfileMode(request, env, profileId, userAgent, appl
     if (Array.isArray(profileNodeIds)) {
         profileNodeIds.forEach(id => {
             const node = misubMap.get(id);
-            if (node && node.enabled && !node.url.startsWith('http')) {
+            if (node && node.enabled && isProxyURISource(node)) {
                 targetMisubs.push(node);
             }
         });
     }
 
     // 分离HTTP订阅和手工节点
-    const targetSubscriptions = targetMisubs.filter(item => item.url.startsWith('http'));
-    const targetManualNodes = targetMisubs.filter(item => !item.url.startsWith('http'));
+    const targetSubscriptions = targetMisubs.filter(item => isSubscriptionSource(item));
+    const targetManualNodes = targetMisubs.filter(item => isProxyURISource(item));
 
     // 处理手工节点（直接解析节点URL）
     // 先将用户自定义名称写入 URL（与订阅生成流程保持一致），
     // 确保 parseNodeInfo 和节点转换管道能基于正确名称工作
     const manualNodeResults = targetManualNodes.map(node => {
         const customName = typeof node.name === 'string' ? node.name.trim() : '';
-        const effectiveUrl = customName ? applyManualNodeName(node.url, customName) : node.url;
+        const baseURL = getSourceInput(node);
+        const effectiveUrl = customName ? applyManualNodeName(baseURL, customName) : baseURL;
 
         const nodeInfo = parseNodeInfo(effectiveUrl);
         return {
@@ -85,7 +92,7 @@ export async function handleProfileMode(request, env, profileId, userAgent, appl
 
     // 并行获取HTTP订阅节点
     const subscriptionResults = await Promise.all(
-        targetSubscriptions.map(sub => fetchSubscriptionNodes(sub.url, sub.name, userAgent, sub.customUserAgent, false, sub.exclude, sub.fetchProxy, skipCertVerify, Boolean(sub?.plusAsSpace)))
+        targetSubscriptions.map(sub => fetchSubscriptionNodes(getSourceInput(sub), sub.name, userAgent, sub.customUserAgent, false, sub.exclude, sub.fetchProxy, skipCertVerify, Boolean(sub?.plusAsSpace)))
     );
 
     // 合并所有结果

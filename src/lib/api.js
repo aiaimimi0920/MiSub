@@ -198,3 +198,19 @@ export async function testSubscription(url, userAgent) {
         return handleApiError(error, 'testSubscription');
     }
 }
+
+export async function probeSource(source) {
+    try {
+        return await api.post('/api/source_probe', { source });
+    } catch (error) {
+        return handleApiError(error, 'probeSource');
+    }
+}
+
+export async function probeSources(sources) {
+    try {
+        return await api.post('/api/source_probe_batch', { sources });
+    } catch (error) {
+        return handleApiError(error, 'probeSources');
+    }
+}

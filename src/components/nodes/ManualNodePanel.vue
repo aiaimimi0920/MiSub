@@ -17,17 +17,23 @@ const props = defineProps({
   activeGroupFilter: { type: String, default: null }, // New
   itemsPerPage: { type: Number, default: 24 }, // Added
   pingResults: { type: Object, default: () => ({}) },
-  pingingNodes: { type: Object, default: () => new Set() }
+  pingingNodes: { type: Object, default: () => new Set() },
+  reprobingNodeIds: { type: Object, default: () => new Set() },
+  isBatchReprobing: { type: Boolean, default: false }
 });
 
 const emit = defineEmits([
   'add', 'delete', 'edit', 'changePage', 'update:searchTerm', 'update:viewMode',
   'toggleSort', 'markDirty', 'autoSort', 'deduplicate', 'import', 'deleteAll', 'reorder',
+  'set-group-filter', 'batch-delete-nodes',
   'rename-group', 'delete-group',
   'update:itemsPerPage', // Added
   'open-batch-group-modal', // Added
   'ping',
-  'ping-all'
+  'ping-all',
+  'reprobe',
+  'reprobe-all',
+  'batch-reprobe-nodes'
 ]);
 
 const isSelectionMode = ref(false);
@@ -96,6 +102,10 @@ const handleBatchDelete = () => {
     isSelectionMode.value = false;
 };
 
+const handleBatchReprobe = () => {
+    emit('batch-reprobe-nodes', Array.from(selectedNodeIds.value));
+};
+
 const draggableManualNodes = computed({
   get: () => [...props.manualNodes],
   set: (val) => emit('reorder', val)
@@ -152,6 +162,7 @@ const handleDeleteAll = () => {
       :view-mode="viewMode"
       :is-sorting="isSorting"
       :is-selection-mode="isSelectionMode"
+      :is-batch-reprobing="isBatchReprobing"
       @update:search-term="handleSearchTermUpdate"
       @update:view-mode="handleSetViewMode"
       @set-group-filter="emit('set-group-filter', $event)"
@@ -163,6 +174,7 @@ const handleDeleteAll = () => {
       @delete-all="handleDeleteAll"
       @toggle-selection-mode="toggleSelectionMode"
       @ping-all="emit('ping-all')"
+      @reprobe-all="emit('reprobe-all')"
     />
 
     <BulkOperations
@@ -170,8 +182,10 @@ const handleDeleteAll = () => {
       :is-all-selected="isAllSelected"
       :selected-count="selectedCount"
       :groups="groups"
+      :is-batch-reprobing="isBatchReprobing"
       @toggle-select-all="toggleSelectAll"
       @batch-group="handleBatchGroup"
+      @batch-reprobe="handleBatchReprobe"
       @batch-delete="handleBatchDelete"
       @exit="() => { selectedNodeIds.clear(); isSelectionMode = false; }"
     />
@@ -200,7 +214,9 @@ const handleDeleteAll = () => {
       @set-group-filter="emit('set-group-filter', $event)"
       :ping-results="pingResults"
       :pinging-nodes="pingingNodes"
+      :reprobing-node-ids="reprobingNodeIds"
       @ping="emit('ping', $event)"
+      @reprobe="emit('reprobe', $event)"
     />
   </div>
 </template>

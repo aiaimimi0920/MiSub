@@ -37,6 +37,7 @@ import {
 } from './handlers/guestbook-handler.js';
 import { handleGithubReleaseRequest } from './handlers/github-proxy-handler.js'; // [NEW] Import handler
 import { handleParseSubscription } from './parse-subscription-handler.js';
+import { handleBatchSourceProbeRequest, handleManifestRequest, handleSourceProbeRequest } from './source-handler.js';
 
 // 常量定义
 const OLD_KV_KEY = 'misub_data_v1';
@@ -133,6 +134,11 @@ export async function handleApiRequest(request, env) {
 
     if (path === '/public/preview') {
         return await handlePublicPreviewRequest(request, env);
+    }
+
+    if (path.startsWith('/manifest/')) {
+        const profileId = decodeURIComponent(path.replace('/manifest/', ''));
+        return await handleManifestRequest(request, env, profileId);
     }
 
     // 留言板公开接口
@@ -340,6 +346,12 @@ export async function handleApiRequest(request, env) {
 
         case '/parse_subscription':
             return await handleParseSubscription(request, env);
+
+        case '/source_probe':
+            return await handleSourceProbeRequest(request, env);
+
+        case '/source_probe_batch':
+            return await handleBatchSourceProbeRequest(request, env);
 
         case '/logs':
             if (request.method === 'GET') {

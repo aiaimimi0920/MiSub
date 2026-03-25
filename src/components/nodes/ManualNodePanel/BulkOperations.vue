@@ -12,13 +12,17 @@ const props = defineProps({
     type: Number,
     default: 0
   },
+  isBatchReprobing: {
+    type: Boolean,
+    default: false
+  },
   groups: {
     type: Array,
     default: () => []
   }
 });
 
-const emit = defineEmits(['toggle-select-all', 'batch-group', 'batch-delete', 'exit']);
+const emit = defineEmits(['toggle-select-all', 'batch-group', 'batch-delete', 'batch-reprobe', 'exit']);
 
 const handleMoveToGroup = () => {
   emit('batch-group');
@@ -47,6 +51,13 @@ const handleMoveToGroup = () => {
         <div class="col-span-2 sm:col-span-1 flex items-center justify-center w-full sm:w-auto gap-2 sm:gap-3 overflow-x-auto no-scrollbar mask-gradient">
           <span class="text-xs text-gray-500 hidden sm:inline">批量操作:</span>
           <div class="flex items-center gap-3 sm:gap-2 w-full sm:w-auto">
+            <button
+               @click="emit('batch-reprobe')"
+               :disabled="isBatchReprobing"
+               class="flex-1 sm:flex-none text-xs font-medium px-3 py-2 sm:py-1 bg-amber-50 text-amber-700 misub-radius-md border border-amber-200 hover:bg-amber-100 hover:text-amber-800 transition-colors whitespace-nowrap"
+            >
+              {{ isBatchReprobing ? '探测中...' : '重新探测' }}
+            </button>
             <button
                @click="handleMoveToGroup"
                class="flex-1 sm:flex-none text-xs font-medium px-3 py-2 sm:py-1 bg-indigo-50 text-indigo-600 misub-radius-md border border-indigo-200 hover:bg-indigo-100 hover:text-indigo-800 transition-colors whitespace-nowrap"

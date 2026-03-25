@@ -6,6 +6,7 @@ import SubscriptionSelector from './ProfileModal/SubscriptionSelector.vue';
 import NodeSelector from './ProfileModal/NodeSelector.vue';
 import { useManualNodes } from '../../composables/useManualNodes.js';
 import { useDataStore } from '../../stores/useDataStore.js';
+import { isSubscriptionSource } from '../../shared/source-utils.js';
 
 const dataStore = useDataStore();
 const { manualNodeGroups } = useManualNodes(dataStore.markDirty);
@@ -137,10 +138,7 @@ const countryCodeMap = {
 };
 
 const filteredSubscriptions = computed(() => {
-  // Only consider items with valid http/https URLs as "Subscriptions"
-  const validSubs = props.allSubscriptions.filter(sub =>
-    sub.url && /^https?:\/\//.test(sub.url)
-  );
+  const validSubs = props.allSubscriptions.filter(sub => isSubscriptionSource(sub));
 
   if (!subscriptionSearchTerm.value) {
     return validSubs;

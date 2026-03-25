@@ -12,9 +12,11 @@ const props = defineProps({
   currentPage: Number,
   totalPages: Number,
   isSorting: Boolean,
+  reprobingSubscriptionIds: { type: Object, default: () => new Set() },
+  isBatchReprobing: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(['add', 'delete', 'changePage', 'updateNodeCount', 'edit', 'toggleSort', 'markDirty', 'preview', 'deleteAll', 'refreshAll', 'reorder', 'import', 'qrcode']);
+const emit = defineEmits(['add', 'delete', 'changePage', 'updateNodeCount', 'edit', 'toggleSort', 'markDirty', 'preview', 'deleteAll', 'refreshAll', 'reorder', 'import', 'qrcode', 'reprobe', 'reprobeAll']);
 
 const draggableSubscriptions = computed({
     get: () => [...props.subscriptions],
@@ -33,6 +35,8 @@ const handleSortEnd = () => emit('markDirty');
 const handleDeleteAll = () => emit('deleteAll');
 const handleRefreshAll = () => emit('refreshAll');
 const handleImport = () => emit('import');
+const handleReprobe = (id) => emit('reprobe', id);
+const handleReprobeAll = () => emit('reprobeAll');
 </script>
 
 <template>
@@ -51,6 +55,9 @@ const handleImport = () => emit('import');
             <template #menu="{ close }">
               <button @click="handleRefreshAll(); close()" class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
                 全部刷新
+              </button>
+              <button @click="handleReprobeAll(); close()" class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700" :disabled="isBatchReprobing">
+                {{ isBatchReprobing ? '探测中...' : '全部重新探测' }}
               </button>
               <button @click="handleToggleSort(); close()" class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
                 {{ isSorting ? '完成排序' : '手动排序' }}
@@ -80,7 +87,9 @@ const handleImport = () => emit('import');
                   @update="handleUpdate(subscription.id)"
                   @edit="handleEdit(subscription.id)"
                   @preview="handlePreview(subscription.id)"
-                  @qrcode="handleQRCode(subscription.id)" />
+                  @qrcode="handleQRCode(subscription.id)"
+                  @reprobe="handleReprobe(subscription.id)"
+                  :is-reprobing="reprobingSubscriptionIds.has(subscription.id)" />
           </div>
         </template>
       </draggable>
@@ -98,7 +107,9 @@ const handleImport = () => emit('import');
                   @update="handleUpdate(subscription.id)"
                   @edit="handleEdit(subscription.id)"
                   @preview="handlePreview(subscription.id)"
-                  @qrcode="handleQRCode(subscription.id)" />
+                  @qrcode="handleQRCode(subscription.id)"
+                  @reprobe="handleReprobe(subscription.id)"
+                  :is-reprobing="reprobingSubscriptionIds.has(subscription.id)" />
           </div>
       </div>
       <PanelPagination

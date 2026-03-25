@@ -3,8 +3,14 @@ import { useToastStore } from '../stores/toast.js';
 import { extractNodeName } from '../lib/utils.js';
 import { generateNodeId, generateSubscriptionId } from '../utils/id.js';
 import { COMMON_NODE_PROTOCOLS, createProtocolRegex } from '@/constants/nodeProtocols.js';
+import {
+    SOURCE_KIND_PROXY_URI,
+    SOURCE_KIND_SUBSCRIPTION,
+    inferSourceKind,
+    normalizeDirectProxyInput
+} from '../shared/source-utils.js';
 
-const BULK_IMPORT_NODE_PROTOCOLS = COMMON_NODE_PROTOCOLS.filter(protocol => protocol !== 'http' && protocol !== 'https');
+const BULK_IMPORT_NODE_PROTOCOLS = COMMON_NODE_PROTOCOLS;
 const BULK_IMPORT_NODE_REGEX = createProtocolRegex(BULK_IMPORT_NODE_PROTOCOLS, false);
 
 export function useBulkImportLogic({ addSubscriptionsFromBulk, addNodesFromBulk }) {
@@ -19,9 +25,13 @@ export function useBulkImportLogic({ addSubscriptionsFromBulk, addNodesFromBulk 
         const validNodes = [];
 
         lines.forEach(line => {
+            const normalizedInput = normalizeDirectProxyInput(line);
+            const inferredKind = inferSourceKind(normalizedInput);
             const baseItem = {
-                name: extractNodeName(line) || '未命名',
-                url: line,
+                name: extractNodeName(normalizedInput) || '未命名',
+                input: normalizedInput,
+                url: normalizedInput,
+                kind: inferredKind,
                 enabled: true,
                 status: 'unchecked',
                 group: group || null,
@@ -32,9 +42,9 @@ export function useBulkImportLogic({ addSubscriptionsFromBulk, addNodesFromBulk 
                 notes: ''
             };
 
-            if (/^https?:\/\//.test(line)) {
+            if (inferredKind === SOURCE_KIND_SUBSCRIPTION) {
                 validSubs.push({ ...baseItem, id: generateSubscriptionId() });
-            } else if (BULK_IMPORT_NODE_REGEX.test(line)) {
+            } else if (inferredKind === SOURCE_KIND_PROXY_URI && BULK_IMPORT_NODE_REGEX.test(normalizedInput)) {
                 validNodes.push({ ...baseItem, id: generateNodeId() });
             }
         });

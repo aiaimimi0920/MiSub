@@ -37,6 +37,7 @@ const {
   activeGroupFilter, setGroupFilter, batchUpdateGroup, batchDeleteNodes,
   manualNodesPerPage,
   pingResults, pingingNodes, pingNodeId, pingAllNodes
+  , reprobeNode, batchReprobeNodes, reprobingNodeIds, isBatchReprobingNodes
 } = useManualNodes(markDirty);
 
 const {
@@ -137,8 +138,13 @@ const confirmBatchDelete = () => {
       @open-batch-group-modal="handleOpenBatchGroupModal"
       :ping-results="pingResults"
       :pinging-nodes="pingingNodes"
+      :reprobing-node-ids="reprobingNodeIds"
+      :is-batch-reprobing="isBatchReprobingNodes"
       @ping="pingNodeId"
       @ping-all="pingAllNodes"
+      @reprobe="reprobeNode"
+      @reprobe-all="() => batchReprobeNodes()"
+      @batch-reprobe-nodes="batchReprobeNodes"
     />
 
     <ManualNodeEditModal v-model:show="showNodeModal" :is-new="isNewNode" :editing-node="editingNode"

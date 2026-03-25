@@ -3,9 +3,10 @@ import { ref, computed } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useDataStore } from '../stores/useDataStore';
 import { useToastStore } from '../stores/toast.js';
-import { fetchNodeCount, batchUpdateNodes } from '../lib/api.js';
+import { fetchNodeCount, batchUpdateNodes, probeSource, probeSources } from '../lib/api.js';
 import { handleError } from '../utils/errorHandler.js';
 import { TIMING } from '../constants/timing.js';
+import { canManuallyProbeSource, getSourceInput, getSourceProbeSummary, isSubscriptionSource } from '../shared/source-utils.js';
 
 const isDev = import.meta.env.DEV;
 
@@ -17,13 +18,15 @@ export function useSubscriptions(markDirty) {
 
   // Filtered computed property: Only http/https links are "Subscriptions"
   const subscriptions = computed(() => {
-    return (allSubscriptions.value || []).filter(sub => sub.url && /^https?:\/\//.test(sub.url));
+    return (allSubscriptions.value || []).filter(sub => isSubscriptionSource(sub));
   });
 
   const subsCurrentPage = ref(1);
   const subsItemsPerPage = 6;
 
   const enabledSubscriptions = computed(() => subscriptions.value.filter(s => s.enabled));
+  const reprobingSubscriptionIds = ref(new Set());
+  const isBatchReprobingSubscriptions = ref(false);
 
   const totalRemainingTraffic = computed(() => {
     const REASONABLE_TRAFFIC_LIMIT_BYTES = 10 * 1024 * 1024 * 1024 * 1024 * 1024; // 10 PB in bytes
@@ -50,6 +53,30 @@ export function useSubscriptions(markDirty) {
     return subscriptions.value.slice(start, end);
   });
 
+  function updateReprobingSubscription(id, active) {
+    const next = new Set(reprobingSubscriptionIds.value);
+    if (active) next.add(id);
+    else next.delete(id);
+    reprobingSubscriptionIds.value = next;
+  }
+
+  function updateReprobingSubscriptions(ids, active) {
+    const next = new Set(reprobingSubscriptionIds.value);
+    for (const id of ids) {
+      if (active) next.add(id);
+      else next.delete(id);
+    }
+    reprobingSubscriptionIds.value = next;
+  }
+
+  function applyProbedSubscription(probedSource) {
+    if (!probedSource?.id) return null;
+    const existing = subscriptions.value.find(sub => sub.id === probedSource.id);
+    if (!existing) return null;
+    dataStore.updateSubscription(probedSource.id, { ...existing, ...probedSource });
+    return subscriptions.value.find(sub => sub.id === probedSource.id) || null;
+  }
+
   function changeSubsPage(page) {
     if (page < 1 || page > subsTotalPages.value) return;
     subsCurrentPage.value = page;
@@ -60,7 +87,7 @@ export function useSubscriptions(markDirty) {
     const subToUpdate = subscriptions.value.find(s => s.id === subId);
     if (!subToUpdate) return;
     // Double check URL just in case
-    if (!subToUpdate.url.startsWith('http')) return;
+    if (!isSubscriptionSource(subToUpdate)) return;
 
     if (!isInitialLoad) {
       subToUpdate.isUpdating = true;
@@ -78,7 +105,7 @@ export function useSubscriptions(markDirty) {
     }, TIMING.REQUEST_TIMEOUT_MS);
 
     try {
-      const result = await fetchNodeCount(subToUpdate.url, subToUpdate.fetchProxy, Boolean(subToUpdate.plusAsSpace));
+      const result = await fetchNodeCount(getSourceInput(subToUpdate), subToUpdate.fetchProxy, Boolean(subToUpdate.plusAsSpace));
 
       // 清除超时保护
       clearTimeout(timeoutId);
@@ -136,6 +163,96 @@ export function useSubscriptions(markDirty) {
       }
     } finally {
       if (subToUpdate) subToUpdate.isUpdating = false;
+    }
+  }
+
+  async function reprobeSubscription(subId, options = {}) {
+    const { silent = false } = options;
+    const sub = subscriptions.value.find(s => s.id === subId);
+    if (!sub) return false;
+    if (!canManuallyProbeSource(sub)) {
+      if (!silent) {
+        showToast('当前订阅不需要联网探测', 'info');
+      }
+      return false;
+    }
+    if (reprobingSubscriptionIds.value.has(subId)) return false;
+
+    updateReprobingSubscription(subId, true);
+    try {
+      const result = await probeSource(sub);
+      if (!result?.success || !result?.data?.source) {
+        throw new Error(result?.error || '重新探测失败');
+      }
+
+      const updatedSub = applyProbedSubscription(result.data.source);
+      if (!updatedSub) {
+        throw new Error('订阅已不存在');
+      }
+
+      markDirty();
+      if (!silent) {
+        const summary = getSourceProbeSummary(updatedSub);
+        const toastType = summary.tone === 'danger'
+          ? 'warning'
+          : summary.tone === 'warning'
+            ? 'info'
+            : 'success';
+        showToast(`${updatedSub.name || '订阅'}：${summary.label}，请保存`, toastType);
+      }
+      return true;
+    } catch (error) {
+      if (!silent) {
+        showToast(`${sub.name || '订阅'} 重新探测失败: ${error.message || '未知错误'}`, 'error');
+      }
+      return false;
+    } finally {
+      updateReprobingSubscription(subId, false);
+    }
+  }
+
+  async function batchReprobeSubscriptions(subscriptionIds = null) {
+    const requestedIds = Array.isArray(subscriptionIds) ? new Set(subscriptionIds) : null;
+    const targets = subscriptions.value.filter(sub => {
+      if (requestedIds && !requestedIds.has(sub.id)) return false;
+      if (reprobingSubscriptionIds.value.has(sub.id)) return false;
+      return canManuallyProbeSource(sub);
+    });
+
+    if (targets.length === 0) {
+      showToast(requestedIds ? '选中的订阅里没有可重新探测的来源' : '没有可重新探测的订阅', 'info');
+      return 0;
+    }
+
+    const targetIds = targets.map(sub => sub.id);
+    updateReprobingSubscriptions(targetIds, true);
+    isBatchReprobingSubscriptions.value = true;
+
+    try {
+      const result = await probeSources(targets);
+      if (!result?.success || !Array.isArray(result?.data?.sources)) {
+        throw new Error(result?.error || '批量重新探测失败');
+      }
+
+      let updatedCount = 0;
+      for (const source of result.data.sources) {
+        const updatedSub = applyProbedSubscription(source);
+        if (updatedSub) {
+          updatedCount += 1;
+        }
+      }
+
+      if (updatedCount > 0) {
+        markDirty();
+      }
+      showToast(`已刷新 ${updatedCount}/${targets.length} 个订阅的探测结果，请保存`, updatedCount > 0 ? 'success' : 'warning');
+      return updatedCount;
+    } catch (error) {
+      showToast(`批量重新探测失败: ${error.message || '未知错误'}`, 'error');
+      return 0;
+    } finally {
+      updateReprobingSubscriptions(targetIds, false);
+      isBatchReprobingSubscriptions.value = false;
     }
   }
 
@@ -202,7 +319,7 @@ export function useSubscriptions(markDirty) {
     }
     markDirty();
 
-    const subsToUpdate = subs.filter(sub => sub.url && sub.url.startsWith('http'));
+    const subsToUpdate = subs.filter(sub => isSubscriptionSource(sub));
 
     if (subsToUpdate.length > 0) {
       showToast(`正在批量更新 ${subsToUpdate.length} 个订阅...`, 'info');
@@ -224,7 +341,7 @@ export function useSubscriptions(markDirty) {
 
   async function batchUpdateAllSubscriptions() {
     const subsToUpdate = subscriptions.value.filter(sub =>
-      sub.enabled && sub.url && sub.url.startsWith('http') && !sub.isUpdating
+      sub.enabled && isSubscriptionSource(sub) && !sub.isUpdating
     );
 
     if (subsToUpdate.length === 0) {
@@ -255,7 +372,7 @@ export function useSubscriptions(markDirty) {
 
         for (const sub of subsToUpdate) {
           try {
-            const result = await fetchNodeCount(sub.url);
+            const result = await fetchNodeCount(getSourceInput(sub));
             if (result.success && result.data.userInfo) {
               sub.userInfo = result.data.userInfo;
             }
@@ -294,7 +411,7 @@ export function useSubscriptions(markDirty) {
   async function autoUpdateAllSubscriptions() {
     try {
       const subsToUpdate = subscriptions.value.filter(sub =>
-        sub.enabled && sub.url && sub.url.startsWith('http') && !sub.isUpdating
+        sub.enabled && isSubscriptionSource(sub) && !sub.isUpdating
       );
       for (const sub of subsToUpdate) {
         await handleUpdateNodeCount(sub.id, true);
@@ -358,7 +475,7 @@ export function useSubscriptions(markDirty) {
     // 1. Get all Manual Nodes (to preserve them)
     // We can't rely just on manualNodes computed because it might be filtered or not imported here.
     // Instead, filter from source of truth: allSubscriptions
-    const currentManualNodes = (allSubscriptions.value || []).filter(item => !item.url || !/^https?:\/\//.test(item.url));
+    const currentManualNodes = (allSubscriptions.value || []).filter(item => !isSubscriptionSource(item));
 
     // 2. Combine New Ordered Subscriptions + Existing Manual Nodes
     // Logic: Manual Nodes at top, Subscriptions at bottom
@@ -385,6 +502,10 @@ export function useSubscriptions(markDirty) {
     deleteAllSubscriptions,
     addSubscriptionsFromBulk,
     handleUpdateNodeCount,
+    reprobeSubscription,
+    batchReprobeSubscriptions,
+    reprobingSubscriptionIds,
+    isBatchReprobingSubscriptions,
     batchUpdateAllSubscriptions,
     startAutoUpdate,
     stopAutoUpdate,

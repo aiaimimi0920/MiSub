@@ -2,6 +2,7 @@ import { useDataStore } from '../stores/useDataStore.js';
 import { useToastStore } from '../stores/toast.js';
 import { storeToRefs } from 'pinia';
 import { useManualNodes } from './useManualNodes.js';
+import { isSubscriptionSource, normalizeSourceCollection } from '../shared/source-utils.js';
 
 /**
  * 备份和恢复逻辑 composable
@@ -21,8 +22,8 @@ export function useBackupLogic() {
     const exportBackup = () => {
         try {
             const backupData = {
-                subscriptions: (subscriptions.value || []).filter(item => item.url && /^https?:\/\//.test(item.url)),
-                manualNodes: (manualNodes.value || []),
+                subscriptions: normalizeSourceCollection((subscriptions.value || []).filter(item => isSubscriptionSource(item))),
+                manualNodes: normalizeSourceCollection(manualNodes.value || []),
                 profiles: profiles.value || [],
             };
 
@@ -66,7 +67,7 @@ export function useBackupLogic() {
                     }
 
                     if (confirm('确定要从备份中恢复吗？所有当前数据将被覆盖。')) {
-                        const merged = [...(data.subscriptions || []), ...(data.manualNodes || [])];
+                        const merged = normalizeSourceCollection([...(data.subscriptions || []), ...(data.manualNodes || [])]);
                         dataStore.overwriteSubscriptions(merged);
                         dataStore.overwriteProfiles(data.profiles || []);
                         dataStore.markDirty();

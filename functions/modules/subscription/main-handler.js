@@ -14,6 +14,12 @@ import { authMiddleware } from '../auth-middleware.js';
 import { generateBuiltinClashConfig } from './builtin-clash-generator.js'; // [Added] 内置 Clash 生成器
 import { generateBuiltinSurgeConfig } from './builtin-surge-generator.js'; // [Added] 内置 Surge 生成器
 import { generateBuiltinLoonConfig } from './builtin-loon-generator.js'; // [Added] 内置 Loon 生成器
+import {
+    getSourceInput,
+    isProxyURISource,
+    isSubscriptionSource,
+    normalizeSourceCollection
+} from '../../../src/shared/source-utils.js';
 
 /**
  * 处理MiSub订阅请求
@@ -38,7 +44,7 @@ export async function handleMisubRequest(context) {
         storageAdapter.get(KV_KEY_PROFILES)
     ]);
     const settings = settingsData || {};
-    const allMisubs = misubsData || [];
+    const allMisubs = normalizeSourceCollection(misubsData || []);
     const allProfiles = profilesData || [];
 
     // 自动迁移旧版 profile ID（去除 'profile_' 前缀）
@@ -115,7 +121,7 @@ export async function handleMisubRequest(context) {
                 if (Array.isArray(profileSubIds)) {
                     profileSubIds.forEach(id => {
                         const sub = misubMap.get(id);
-                        if (sub && sub.enabled && typeof sub.url === 'string' && sub.url.startsWith('http')) {
+                        if (sub && sub.enabled && isSubscriptionSource(sub)) {
                             targetMisubs.push(sub);
                         }
                     });
@@ -126,7 +132,7 @@ export async function handleMisubRequest(context) {
                 if (Array.isArray(profileNodeIds)) {
                     profileNodeIds.forEach(id => {
                         const node = misubMap.get(id);
-                        if (node && node.enabled && typeof node.url === 'string' && !node.url.startsWith('http')) {
+                        if (node && node.enabled && isProxyURISource(node)) {
                             targetMisubs.push(node);
                         }
                     });
@@ -316,8 +322,8 @@ export async function handleMisubRequest(context) {
             shouldSkipCertificateVerify
         );
         const sourceNames = targetMisubs
-            .filter(s => typeof s?.url === 'string' && s.url.startsWith('http'))
-            .map(s => s.name || s.url);
+            .filter(s => isSubscriptionSource(s))
+            .map(s => s.name || getSourceInput(s));
         await setCache(storageAdapter, cacheKey, freshNodes, sourceNames);
         return freshNodes;
     };

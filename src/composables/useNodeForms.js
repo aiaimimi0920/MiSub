@@ -2,6 +2,7 @@ import { ref } from 'vue';
 import { useToastStore } from '../stores/toast.js';
 import { extractNodeName } from '../lib/utils.js';
 import { generateNodeId } from '../utils/id.js';
+import { isProxyURISource, normalizeSourceItem } from '../shared/source-utils.js';
 
 const isDev = import.meta.env.DEV;
 
@@ -17,6 +18,8 @@ export function useNodeForms({ addNode, updateNode }) {
             id: generateNodeId(),
             name: '',
             url: '',
+            input: '',
+            kind: 'proxy_uri',
             enabled: true,
             colorTag: null
         };
@@ -52,11 +55,16 @@ export function useNodeForms({ addNode, updateNode }) {
             showToast('节点链接不能为空', 'error');
             return;
         }
+        const normalized = normalizeSourceItem(editingNode.value);
+        if (!isProxyURISource(normalized)) {
+            showToast('请输入有效的节点链接或代理地址', 'error');
+            return;
+        }
 
         if (isNew.value) {
-            addNode(editingNode.value);
+            addNode(normalized);
         } else {
-            updateNode(editingNode.value);
+            updateNode(normalized);
         }
         showModal.value = false;
     };

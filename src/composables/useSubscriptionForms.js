@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import { useToastStore } from '../stores/toast.js';
 import { generateSubscriptionId } from '../utils/id.js';
+import { isSubscriptionSource, normalizeSourceItem } from '../shared/source-utils.js';
 
 const isDev = import.meta.env.DEV;
 
@@ -15,6 +16,8 @@ export function useSubscriptionForms({ addSubscription, updateSubscription }) {
         editingSubscription.value = {
             name: '',
             url: '',
+            input: '',
+            kind: 'subscription',
             enabled: true,
             exclude: '',
             customUserAgent: 'MiSub',
@@ -51,15 +54,16 @@ export function useSubscriptionForms({ addSubscription, updateSubscription }) {
             showToast('订阅链接不能为空', 'error');
             return;
         }
-        if (!/^https?:\/\//.test(editingSubscription.value.url)) {
+        const normalized = normalizeSourceItem(editingSubscription.value);
+        if (!isSubscriptionSource(normalized)) {
             showToast('请输入有效的 http:// 或 https:// 订阅链接', 'error');
             return;
         }
 
         if (isNew.value) {
-            addSubscription({ ...editingSubscription.value, id: generateSubscriptionId() });
+            addSubscription({ ...normalized, id: generateSubscriptionId() });
         } else {
-            updateSubscription(editingSubscription.value);
+            updateSubscription(normalized);
         }
         showModal.value = false;
     };

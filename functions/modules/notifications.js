@@ -5,6 +5,7 @@
 
 import { formatBytes } from './utils.js';
 import { KV_KEY_SUBS, KV_KEY_SETTINGS, DEFAULT_SETTINGS, SYSTEM_CONSTANTS } from './config.js';
+import { isSubscriptionSource, normalizeSourceCollection } from '../../src/shared/source-utils.js';
 
 /**
  * 发送Telegram基础通知
@@ -178,12 +179,12 @@ export async function handleCronTrigger(env) {
     const { checkAndNotify } = await import('./notifications.js');
 
     const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
-    const originalSubs = await storageAdapter.get(KV_KEY_SUBS) || [];
+    const originalSubs = normalizeSourceCollection(await storageAdapter.get(KV_KEY_SUBS) || []);
     const allSubs = JSON.parse(JSON.stringify(originalSubs)); // 深拷贝以便比较
     const settings = await storageAdapter.get(KV_KEY_SETTINGS) || DEFAULT_SETTINGS;
 
     // 只处理 HTTP 订阅源（排除手动节点）
-    const httpSubscriptions = allSubs.filter(sub => sub.url.startsWith('http') && sub.enabled);
+    const httpSubscriptions = allSubs.filter(sub => sub.enabled && isSubscriptionSource(sub));
 
     console.info(`[Cron] Starting parallel update for ${httpSubscriptions.length} subscriptions`);
     const startTime = Date.now();

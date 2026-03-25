@@ -8,6 +8,11 @@ import { getCookieSecret, getAdminPassword, setAdminPassword, isUsingDefaultPass
 import { authMiddleware, handleLogin, handleLogout, createUnauthorizedResponse } from './auth-middleware.js';
 import { sendTgNotification, checkAndNotify } from './notifications.js';
 import { clearAllNodeCaches } from '../services/node-cache-service.js';
+import {
+    isSubscriptionSource,
+    normalizeSourceCollection
+} from '../../src/shared/source-utils.js';
+import { enrichSourcesWithProbeMetadata } from './source-probe.js';
 
 import { KV_KEY_SUBS, KV_KEY_PROFILES, KV_KEY_SETTINGS, DEFAULT_SETTINGS as defaultSettings } from './config.js';
 
@@ -49,6 +54,13 @@ export async function handleDataRequest(env) {
             storageAdapter.get(KV_KEY_PROFILES).then(res => res || []),
             storageAdapter.get(KV_KEY_SETTINGS).then(res => res || {})
         ]);
+        const normalizedMisubs = normalizeSourceCollection(misubs);
+
+        if (JSON.stringify(normalizedMisubs) !== JSON.stringify(misubs)) {
+            storageAdapter.put(KV_KEY_SUBS, normalizedMisubs).catch(err =>
+                console.error('[Migration] Failed to persist normalized source records:', err)
+            );
+        }
 
         // 自动迁移旧版 profile ID（去除 'profile_' 前缀）
         if (migrateProfileIds(profiles)) {
@@ -63,7 +75,7 @@ export async function handleDataRequest(env) {
             profileToken: settings.profileToken || 'profiles',
             isDefaultPassword: await isUsingDefaultPassword(env)
         };
-        return createJsonResponse({ misubs, profiles, config });
+        return createJsonResponse({ misubs: normalizedMisubs, profiles, config });
     } catch (e) {
         console.error('[API Error /data] Failed to read from storage', {
             error: e?.message,
@@ -107,6 +119,7 @@ export async function handleMisubsSave(request, env) {
 
         const { misubs, profiles, diff } = requestData;
         const storageAdapter = await getStorageAdapter(env);
+        const existingMisubs = await storageAdapter.get(KV_KEY_SUBS).then(res => res || []);
 
         let finalMisubs = misubs;
         let finalProfiles = profiles;
@@ -116,7 +129,7 @@ export async function handleMisubsSave(request, env) {
             console.info('[API] Processing Diff Patch...');
             // 获取当前数据
             const [currentMisubs, currentProfiles] = await Promise.all([
-                storageAdapter.get(KV_KEY_SUBS).then(res => res || []),
+                Promise.resolve(existingMisubs),
                 storageAdapter.get(KV_KEY_PROFILES).then(res => res || [])
             ]);
 
@@ -157,6 +170,9 @@ export async function handleMisubsSave(request, env) {
             }
         }
 
+        finalMisubs = normalizeSourceCollection(finalMisubs);
+        finalMisubs = await enrichSourcesWithProbeMetadata(finalMisubs, existingMisubs);
+
         // 步骤4: 获取设置（带错误处理）
         let settings;
         try {
@@ -170,7 +186,7 @@ export async function handleMisubsSave(request, env) {
         if (finalMisubs && finalMisubs.length > 0) {
             try {
                 const notificationPromises = finalMisubs
-                    .filter(sub => sub && sub.url && sub.url.startsWith('http'))
+                    .filter(sub => isSubscriptionSource(sub))
                     .map(sub => checkAndNotify(sub, settings, env).catch(notifyError => {
                         console.warn('[API] Notification failed for subscription:', sub?.name || sub?.url, notifyError);
                     }));

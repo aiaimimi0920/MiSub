@@ -25,6 +25,7 @@ const {
   subscriptions, subsCurrentPage, subsTotalPages, paginatedSubscriptions,
   changeSubsPage, addSubscription, updateSubscription, deleteSubscription, deleteAllSubscriptions,
   addSubscriptionsFromBulk, handleUpdateNodeCount, batchUpdateAllSubscriptions,
+  reprobeSubscription, batchReprobeSubscriptions, reprobingSubscriptionIds, isBatchReprobingSubscriptions,
   reorderSubscriptions
 } = useSubscriptions(markDirty);
 
@@ -108,11 +109,15 @@ const handleQRCode = (id) => {
       :current-page="subsCurrentPage"
       :total-pages="subsTotalPages"
       :is-sorting="isSortingSubs"
+      :reprobing-subscription-ids="reprobingSubscriptionIds"
+      :is-batch-reprobing="isBatchReprobingSubscriptions"
       @add="handleAddSubscription"
       @delete="handleDeleteSubscriptionWithCleanup"
       @change-page="changeSubsPage"
       @update-node-count="handleUpdateNodeCount"
       @refresh-all="batchUpdateAllSubscriptions"
+      @reprobe="reprobeSubscription"
+      @reprobe-all="batchReprobeSubscriptions"
       @edit="(id) => handleEditSubscription(subscriptions.find(s => s.id === id))"
       @toggle-sort="isSortingSubs = !isSortingSubs"
       @mark-dirty="markDirty"

@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { canManuallyProbeSource, getSourceProbeSummary, shouldShowSourceProbeNotice } from '../../shared/source-utils.js';
 
 const props = defineProps({
   node: {
@@ -9,10 +10,11 @@ const props = defineProps({
   isSelectionMode: Boolean,
   isSelected: Boolean,
   pingResult: Object,
-  isPinging: Boolean
+  isPinging: Boolean,
+  isReprobing: Boolean
 });
 
-const emit = defineEmits(['delete', 'edit', 'toggle-select', 'filter-group', 'ping']);
+const emit = defineEmits(['delete', 'edit', 'toggle-select', 'filter-group', 'ping', 'reprobe']);
 
 const getProtocol = (url) => {
   // ... (protocol logic unchanged)
@@ -62,6 +64,10 @@ const protocolStyle = computed(() => {
   }
 });
 
+const probeSummary = computed(() => getSourceProbeSummary(props.node));
+const showProbeNotice = computed(() => shouldShowSourceProbeNotice(props.node));
+const canReprobe = computed(() => canManuallyProbeSource(props.node));
+
 
 </script>
 
@@ -100,6 +106,15 @@ const protocolStyle = computed(() => {
       >
         {{ protocolStyle.text }}
       </div>
+      <div v-if="showProbeNotice"
+           class="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+           :class="{
+             'bg-amber-500/15 text-amber-600 dark:text-amber-300': probeSummary.tone === 'warning',
+             'bg-red-500/15 text-red-600 dark:text-red-300': probeSummary.tone === 'danger',
+             'bg-gray-500/15 text-gray-500 dark:text-gray-300': !['warning', 'danger'].includes(probeSummary.tone)
+           }">
+        {{ probeSummary.label }}
+      </div>
       <p class="font-medium text-sm text-gray-800 dark:text-gray-100 truncate flex-1 min-w-0" :title="node.name">
         {{ node.name || '未命名节点' }}
       </p>
@@ -123,10 +138,12 @@ const protocolStyle = computed(() => {
         <span v-else>不通</span>
       </div>
     </div>
-
     <div v-if="!isSelectionMode" class="shrink-0 flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
         <button @click.stop="emit('ping')" class="p-1.5 misub-radius-md hover:bg-green-500/10 text-gray-400 hover:text-green-500" title="测速" :disabled="isPinging" :class="{ 'animate-pulse text-green-500': isPinging }">
            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        </button>
+        <button v-if="canReprobe" @click.stop="emit('reprobe')" class="p-1.5 misub-radius-md hover:bg-amber-500/10 text-gray-400 hover:text-amber-500 disabled:opacity-50" title="重新探测来源" :disabled="isReprobing">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" :class="{ 'animate-spin': isReprobing }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5v5h5m10-5v5h-5M5.5 19.5a8 8 0 0013.62-3M18.5 4.5A8 8 0 005.38 7.5" /></svg>
         </button>
         <button @click.stop="emit('edit')" class="p-1.5 misub-radius-md hover:bg-gray-500/10 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" title="编辑节点">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536L16.732 3.732z" /></svg>
@@ -137,4 +154,3 @@ const protocolStyle = computed(() => {
     </div>
   </div>
 </template>
-

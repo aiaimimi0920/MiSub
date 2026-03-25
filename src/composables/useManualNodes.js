@@ -3,12 +3,14 @@ import { ref, computed, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useDataStore } from '../stores/useDataStore.js';
 import { useToastStore } from '../stores/toast.js'; // Restored
+import { probeSource, probeSources } from '../lib/api.js';
 import { extractNodeName, extractHostAndPort } from '../lib/utils.js';
 import { pingNode } from '../utils/ping.js';
 import { filterManualNodes, isManualNodeEntry } from './manual-nodes/filters.js';
 import { buildDedupPlan as buildDedupPlanCore } from './manual-nodes/dedup.js';
 import { buildAutoSortedSubscriptions } from './manual-nodes/sorting.js';
 import { collectManualNodeGroups, buildGroupedManualNodes } from './manual-nodes/groups.js';
+import { canManuallyProbeSource, getSourceProbeSummary, isSubscriptionSource } from '../shared/source-utils.js';
 
 export function useManualNodes(markDirty) {
   const { showToast } = useToastStore();
@@ -50,6 +52,32 @@ export function useManualNodes(markDirty) {
   });
 
   const enabledManualNodes = computed(() => manualNodes.value.filter(n => n.enabled));
+  const reprobingNodeIds = ref(new Set());
+  const isBatchReprobingNodes = ref(false);
+
+  function updateReprobingNode(id, active) {
+    const next = new Set(reprobingNodeIds.value);
+    if (active) next.add(id);
+    else next.delete(id);
+    reprobingNodeIds.value = next;
+  }
+
+  function updateReprobingNodes(ids, active) {
+    const next = new Set(reprobingNodeIds.value);
+    for (const id of ids) {
+      if (active) next.add(id);
+      else next.delete(id);
+    }
+    reprobingNodeIds.value = next;
+  }
+
+  function applyProbedNode(probedNode) {
+    if (!probedNode?.id) return null;
+    const existing = manualNodes.value.find(node => node.id === probedNode.id);
+    if (!existing) return null;
+    dataStore.updateSubscription(probedNode.id, { ...existing, ...probedNode });
+    return manualNodes.value.find(node => node.id === probedNode.id) || null;
+  }
 
   function changeManualNodesPage(page) {
     let p = parseInt(page);
@@ -118,6 +146,96 @@ export function useManualNodes(markDirty) {
     // Update in shared store
     dataStore.updateSubscription(updatedNode.id, updatedNode);
     markDirty();
+  }
+
+  async function reprobeNode(nodeId, options = {}) {
+    const { silent = false } = options;
+    const node = manualNodes.value.find(n => n.id === nodeId);
+    if (!node) return false;
+    if (!canManuallyProbeSource(node)) {
+      if (!silent) {
+        showToast('当前节点不需要联网探测', 'info');
+      }
+      return false;
+    }
+    if (reprobingNodeIds.value.has(nodeId)) return false;
+
+    updateReprobingNode(nodeId, true);
+    try {
+      const result = await probeSource(node);
+      if (!result?.success || !result?.data?.source) {
+        throw new Error(result?.error || '重新探测失败');
+      }
+
+      const updatedNode = applyProbedNode(result.data.source);
+      if (!updatedNode) {
+        throw new Error('节点已不存在');
+      }
+
+      markDirty();
+      if (!silent) {
+        const summary = getSourceProbeSummary(updatedNode);
+        const toastType = summary.tone === 'danger'
+          ? 'warning'
+          : summary.tone === 'warning'
+            ? 'info'
+            : 'success';
+        showToast(`${updatedNode.name || '节点'}：${summary.label}，请保存`, toastType);
+      }
+      return true;
+    } catch (error) {
+      if (!silent) {
+        showToast(`${node.name || '节点'} 重新探测失败: ${error.message || '未知错误'}`, 'error');
+      }
+      return false;
+    } finally {
+      updateReprobingNode(nodeId, false);
+    }
+  }
+
+  async function batchReprobeNodes(nodeIds = null) {
+    const requestedIds = Array.isArray(nodeIds) ? new Set(nodeIds) : null;
+    const targets = manualNodes.value.filter(node => {
+      if (requestedIds && !requestedIds.has(node.id)) return false;
+      if (reprobingNodeIds.value.has(node.id)) return false;
+      return canManuallyProbeSource(node);
+    });
+
+    if (targets.length === 0) {
+      showToast(requestedIds ? '选中的节点里没有可重新探测的来源' : '没有可重新探测的节点', 'info');
+      return 0;
+    }
+
+    const targetIds = targets.map(node => node.id);
+    updateReprobingNodes(targetIds, true);
+    isBatchReprobingNodes.value = true;
+
+    try {
+      const result = await probeSources(targets);
+      if (!result?.success || !Array.isArray(result?.data?.sources)) {
+        throw new Error(result?.error || '批量重新探测失败');
+      }
+
+      let updatedCount = 0;
+      for (const source of result.data.sources) {
+        const updatedNode = applyProbedNode(source);
+        if (updatedNode) {
+          updatedCount += 1;
+        }
+      }
+
+      if (updatedCount > 0) {
+        markDirty();
+      }
+      showToast(`已刷新 ${updatedCount}/${targets.length} 个节点的探测结果，请保存`, updatedCount > 0 ? 'success' : 'warning');
+      return updatedCount;
+    } catch (error) {
+      showToast(`批量重新探测失败: ${error.message || '未知错误'}`, 'error');
+      return 0;
+    } finally {
+      updateReprobingNodes(targetIds, false);
+      isBatchReprobingNodes.value = false;
+    }
   }
 
   function deleteNode(nodeId) {
@@ -208,7 +326,7 @@ export function useManualNodes(markDirty) {
 
   function reorderManualNodes(newOrder) {
     // 1. Get all Subscriptions (to preserve them)
-    const currentSubscriptions = (allSubscriptions.value || []).filter(item => item.url && /^https?:\/\//.test(item.url));
+    const currentSubscriptions = (allSubscriptions.value || []).filter(item => isSubscriptionSource(item));
 
     // 2. Combine Existing Subscriptions + New Ordered Manual Nodes
     // Logic: Manual Nodes at top, Subscriptions at bottom
@@ -331,6 +449,10 @@ export function useManualNodes(markDirty) {
     pingResults,
     pingingNodes,
     pingNodeId,
-    pingAllNodes
+    pingAllNodes,
+    reprobeNode,
+    batchReprobeNodes,
+    reprobingNodeIds,
+    isBatchReprobingNodes
   };
 }

@@ -8,6 +8,11 @@ import { createJsonResponse, createErrorResponse } from '../utils.js';
 import { handleSubscriptionNodesRequest } from '../subscription-handler.js';
 import { debugTgNotification } from '../../services/notification-service.js';
 import { parseNodeList, calculateProtocolStats, calculateRegionStats } from '../utils/node-parser.js';
+import {
+    isProxyURISource,
+    isSubscriptionSource,
+    normalizeSourceCollection
+} from '../../../src/shared/source-utils.js';
 
 /**
  * 调试订阅信息和节点内容
@@ -262,8 +267,9 @@ export async function handleExportDataRequest(request, env) {
         };
 
         if (includeSubscriptions) {
-            const subscriptions = await storageAdapter.get('misub_subscriptions_v1') || [];
-            exportData.data.subscriptions = subscriptions;
+            const sources = normalizeSourceCollection(await storageAdapter.get('misub_subscriptions_v1') || []);
+            exportData.data.subscriptions = sources.filter(source => isSubscriptionSource(source));
+            exportData.data.manualNodes = sources.filter(source => isProxyURISource(source));
         }
 
         if (includeProfiles) {

@@ -4,6 +4,11 @@ import { parseNodeInfo } from '../utils/geo-utils.js';
 import { calculateProtocolStats, calculateRegionStats } from '../utils/node-parser.js';
 import { KV_KEY_SUBS } from '../config.js';
 import { fetchSubscriptionNodes } from './node-fetcher.js';
+import {
+    getSourceInput,
+    isProxyURISource,
+    normalizeSourceCollection
+} from '../../../src/shared/source-utils.js';
 
 /**
  * 处理单个订阅模式的节点获取
@@ -17,7 +22,7 @@ export async function handleSingleSubscriptionMode(request, env, subscriptionId,
     const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
 
     // 查找订阅
-    const allSubscriptions = await storageAdapter.get(KV_KEY_SUBS) || [];
+    const allSubscriptions = normalizeSourceCollection(await storageAdapter.get(KV_KEY_SUBS) || []);
     const subscription = allSubscriptions.find(sub => sub.id === subscriptionId);
 
     if (!subscription || !subscription.enabled) {
@@ -25,15 +30,17 @@ export async function handleSingleSubscriptionMode(request, env, subscriptionId,
     }
 
     // 检查是否为手工节点
-    if (!subscription.url.startsWith('http')) {
+    if (isProxyURISource(subscription)) {
         // 手工节点：直接解析节点URL
-        const nodeInfo = parseNodeInfo(subscription.url);
+        const sourceURL = getSourceInput(subscription);
+        const nodeInfo = parseNodeInfo(sourceURL);
         const manualNodeResult = {
             subscriptionName: subscription.name || '手工节点',
-            url: subscription.url,
+            url: sourceURL,
             success: true,
             nodes: [{
                 ...nodeInfo,
+                url: sourceURL,
                 subscriptionName: subscription.name || '手工节点'
             }],
             error: null,
@@ -53,7 +60,7 @@ export async function handleSingleSubscriptionMode(request, env, subscriptionId,
     }
 
     // HTTP订阅：获取节点
-    const result = await fetchSubscriptionNodes(subscription.url, subscription.name, userAgent, subscription.customUserAgent, false, subscription.exclude, subscription.fetchProxy, skipCertVerify, Boolean(subscription?.plusAsSpace));
+    const result = await fetchSubscriptionNodes(getSourceInput(subscription), subscription.name, userAgent, subscription.customUserAgent, false, subscription.exclude, subscription.fetchProxy, skipCertVerify, Boolean(subscription?.plusAsSpace));
 
     return {
         success: true,

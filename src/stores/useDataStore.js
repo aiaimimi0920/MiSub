@@ -7,6 +7,7 @@ import { createStorageCache } from '../utils/cache-helper.js';
 import { DEFAULT_SETTINGS } from '../constants/default-settings.js';
 import { TIMING } from '../constants/timing.js';
 import { api } from '../lib/http.js';
+import { normalizeSourceCollection, normalizeSourceItem } from '../shared/source-utils.js';
 
 const isDev = import.meta.env.DEV;
 
@@ -49,7 +50,7 @@ export const useDataStore = defineStore('data', () => {
         if (!data) return false;
 
         try {
-            const cleanSubs = (data.misubs || []).map(sub => ({ ...sub, isUpdating: false }));
+            const cleanSubs = normalizeSourceCollection(data.misubs || []).map(sub => ({ ...sub, isUpdating: false }));
             subscriptions.value = cleanSubs;
             profiles.value = data.profiles || [];
             settingsStore.setConfig({ ...DEFAULT_SETTINGS, ...data.config });
@@ -108,10 +109,10 @@ export const useDataStore = defineStore('data', () => {
         saveState.value = 'saving';
 
         try {
-            const sanitizedSubs = subscriptions.value.map(sub => {
+            const sanitizedSubs = normalizeSourceCollection(subscriptions.value.map(sub => {
                 const { isUpdating, ...rest } = sub;
                 return rest;
-            });
+            }));
 
             const payload = {
                 misubs: sanitizedSubs,
@@ -193,11 +194,11 @@ export const useDataStore = defineStore('data', () => {
 
     // --- Proxy Actions (Mutators) ---
     function addSubscription(subscription) {
-        subscriptions.value.unshift(subscription);
+        subscriptions.value.unshift(normalizeSourceItem(subscription));
     }
 
     function overwriteSubscriptions(items) {
-        subscriptions.value = items;
+        subscriptions.value = normalizeSourceCollection(items);
     }
 
     function removeSubscription(id) {
@@ -210,7 +211,7 @@ export const useDataStore = defineStore('data', () => {
     function updateSubscription(id, updates) {
         const index = subscriptions.value.findIndex(s => s.id === id);
         if (index !== -1) {
-            subscriptions.value[index] = { ...subscriptions.value[index], ...updates };
+            subscriptions.value[index] = normalizeSourceItem({ ...subscriptions.value[index], ...updates });
         }
     }
 
@@ -317,4 +318,3 @@ export const useDataStore = defineStore('data', () => {
         clearDirty
     };
 });
-

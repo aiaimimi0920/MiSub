@@ -9,6 +9,7 @@ import { saveMisubs } from '../../../lib/api.js';
 import { useToastStore } from '../../../stores/toast.js';
 import { useUIStore } from '../../../stores/ui.js';
 import { TIMING } from '../../../constants/timing.js';
+import { isProxyURISource, isSubscriptionSource } from '../../../shared/source-utils.js';
 
 // 子组件
 import SubscriptionManager from './SubscriptionManager.vue';
@@ -86,8 +87,8 @@ const initializeState = () => {
   isLoading.value = true;
   if (props.data) {
     const subsData = props.data.misubs || [];
-    initialSubs.value = subsData.filter(item => item.url && /^https?:\/\//.test(item.url));
-    initialNodes.value = subsData.filter(item => !item.url || !/^https?:\/\//.test(item.url));
+    initialSubs.value = subsData.filter(item => isSubscriptionSource(item));
+    initialNodes.value = subsData.filter(item => isProxyURISource(item));
     initialProfiles.value = props.data.profiles || [];
     config.value = props.data.config || {};
     initializeProfiles();

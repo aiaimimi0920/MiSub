@@ -8,6 +8,11 @@ import { getProcessedUserAgent } from '../utils/format-utils.js';
 import { prependNodeName, removeFlagEmoji, fixNodeUrlEncoding, sanitizeNodeForYaml } from '../utils/node-utils.js';
 import { applyNodeTransformPipeline } from '../utils/node-transformer.js';
 import { createTimeoutFetch } from '../modules/utils.js';
+import {
+    getSourceInput,
+    isProxyURISource,
+    isSubscriptionSource
+} from '../../src/shared/source-utils.js';
 
 /**
  * 订阅获取配置常量
@@ -160,12 +165,12 @@ const prependGroupName = profilePrefixSettings?.prependGroupName ?? false;
 
 const processedManualNodes = misubs
 .filter(sub => {
-const url = typeof sub?.url === 'string' ? sub.url.trim() : '';
-return Boolean(url) && !url.toLowerCase().startsWith('http');
+const url = getSourceInput(sub);
+return Boolean(url) && isProxyURISource(sub);
 })
 .map(node => {
 try {
-const rawUrl = typeof node?.url === 'string' ? node.url.trim() : '';
+const rawUrl = getSourceInput(node);
 if (!rawUrl) return '';
 
 if (node.isExpiredNode) {
@@ -201,7 +206,7 @@ return '';
 .filter(Boolean)
 .join('\n');
 
-    const httpSubs = misubs.filter(sub => sub && sub.url && sub.url.toLowerCase().startsWith('http'));
+    const httpSubs = misubs.filter(sub => isSubscriptionSource(sub));
     const limiter = createConcurrencyLimiter(FETCH_CONFIG.CONCURRENCY);
 
     /**
@@ -211,18 +216,19 @@ return '';
      */
     const fetchSingleSubscription = async (sub) => {
         try {
+            const sourceURL = getSourceInput(sub);
             if (debug) {
-                console.debug(`[DEBUG] Fetching subscription: ${sub.url}`);
+                console.debug(`[DEBUG] Fetching subscription: ${sourceURL}`);
             }
-            const processedUserAgent = getProcessedUserAgent(userAgent, sub.url);
+            const processedUserAgent = getProcessedUserAgent(userAgent, sourceURL);
             const requestHeaders = { 'User-Agent': processedUserAgent };
 
             // [Fetch Proxy] 获取单点订阅专属拉取代理前缀
-            let requestUrl = sub.url;
+            let requestUrl = sourceURL;
             if (sub.fetchProxy && typeof sub.fetchProxy === 'string' && sub.fetchProxy.trim()) {
                 const proxyPrefix = sub.fetchProxy.trim();
                 // 将被代理的 URL 进行编码，拼接到代理前缀之后
-                requestUrl = `${proxyPrefix}${encodeURIComponent(sub.url)}`;
+                requestUrl = `${proxyPrefix}${encodeURIComponent(sourceURL)}`;
                 if (debug) {
                     console.debug(`[DEBUG] Fetching via proxy: ${requestUrl}`);
                 }

@@ -22,7 +22,8 @@ const props = defineProps({
   draggableManualNodes: { type: Array, default: () => [] },
   itemsPerPage: { type: Number, default: 24 }, // Added
   pingResults: { type: Object, default: () => ({}) },
-  pingingNodes: { type: Object, default: () => new Set() }
+  pingingNodes: { type: Object, default: () => new Set() },
+  reprobingNodeIds: { type: Object, default: () => new Set() }
 });
 
 const emit = defineEmits([
@@ -34,7 +35,8 @@ const emit = defineEmits([
   'change-page',
   'update:itemsPerPage', // Added
   'set-group-filter', // Added
-  'ping'
+  'ping',
+  'reprobe'
 ]);
 
 const draggableModel = computed({
@@ -81,11 +83,13 @@ const handleChangePage = (page) => {
                 :is-selected="selectedNodeIds.has(node.id)"
                 :ping-result="pingResults[node.id]"
                 :is-pinging="pingingNodes.has(node.id)"
+                :is-reprobing="reprobingNodeIds.has(node.id)"
                 @toggle-select="emit('toggle-select', node.id)"
                 @edit="emit('edit', node.id)" 
                 @delete="emit('delete', node.id)"
                 @filter-group="emit('set-group-filter', $event)"
-                @ping="emit('ping', node.id)" />
+                @ping="emit('ping', node.id)"
+                @reprobe="emit('reprobe', node.id)" />
             </div>
           </template>
         </draggable>
@@ -108,10 +112,12 @@ const handleChangePage = (page) => {
                 :style="{ '--delay-index': Math.min(index, 20) }"
                 :ping-result="pingResults[node.id]"
                 :is-pinging="pingingNodes.has(node.id)"
+                :is-reprobing="reprobingNodeIds.has(node.id)"
                 @edit="emit('edit', node.id)"
                 @delete="emit('delete', node.id)"
                 @filter-group="emit('set-group-filter', $event)"
                 @ping="emit('ping', node.id)"
+                @reprobe="emit('reprobe', node.id)"
               />
             </div>
           </template>
@@ -134,11 +140,13 @@ const handleChangePage = (page) => {
             :is-selected="selectedNodeIds.has(node.id)"
             :ping-result="pingResults[node.id]"
             :is-pinging="pingingNodes.has(node.id)"
+            :is-reprobing="reprobingNodeIds.has(node.id)"
             @toggle-select="emit('toggle-select', node.id)"
             @edit="emit('edit', node.id)" 
             @delete="emit('delete', node.id)" 
             @filter-group="emit('set-group-filter', $event)" 
             @ping="emit('ping', node.id)"
+            @reprobe="emit('reprobe', node.id)"
           />
         </div>
       </div>
@@ -154,11 +162,13 @@ const handleChangePage = (page) => {
           :is-selected="selectedNodeIds.has(node.id)"
           :ping-result="pingResults[node.id]"
           :is-pinging="pingingNodes.has(node.id)"
+          :is-reprobing="reprobingNodeIds.has(node.id)"
           @toggle-select="emit('toggle-select', node.id)"
           @edit="emit('edit', node.id)"
           @delete="emit('delete', node.id)"
           @filter-group="emit('set-group-filter', $event)"
           @ping="emit('ping', node.id)"
+          @reprobe="emit('reprobe', node.id)"
         />
       </div>
     </div>

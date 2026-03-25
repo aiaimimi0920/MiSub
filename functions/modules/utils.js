@@ -54,7 +54,7 @@ function getKV(env) {
  * @param {string} key
  * @returns {string|undefined}
  */
-function getRuntimeEnvValue(env, key) {
+export function getRuntimeEnvValue(env, key) {
     const envValue = env?.[key];
     if (envValue !== undefined && envValue !== null && String(envValue).trim() !== '') {
         return String(envValue);
@@ -68,6 +68,12 @@ function getRuntimeEnvValue(env, key) {
     } catch (_) {}
 
     return undefined;
+}
+
+export function getManifestToken(env) {
+    const runtimeManifestToken = getRuntimeEnvValue(env, 'MANIFEST_TOKEN');
+    if (!runtimeManifestToken) return '';
+    return runtimeManifestToken.trim();
 }
 
 function isStorageUnavailableError(error) {
