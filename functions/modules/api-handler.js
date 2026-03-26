@@ -256,7 +256,7 @@ export async function handleSettingsGet(env) {
         if (isStorageUnavailableError(e)) {
             return createJsonResponse({
                 ...defaultSettings,
-                storageType: 'kv',
+                storageType: 'd1',
                 storageUnavailable: true
             });
         }
@@ -300,7 +300,7 @@ export async function handleSettingsSave(request, env) {
             if (isStorageUnavailableError(storageError)) {
                 return createJsonResponse({
                     success: false,
-                    message: 'KV 存储已暂停，设置当前无法保存。若为 EdgeOne 部署，请先恢复 KV；若为 Cloudflare 部署，可配置 D1 后切换到 D1 存储。'
+                    message: '当前持久化存储不可用。Cloudflare 主路径应绑定 MISUB_DB 并使用 D1；KV 仅保留兼容迁移用途。'
                 }, 503);
             }
             throw storageError;

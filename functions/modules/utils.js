@@ -76,6 +76,16 @@ export function getManifestToken(env) {
     return runtimeManifestToken.trim();
 }
 
+function getPreferredStorageMode(env, hasKv) {
+    if (env?.MISUB_DB) {
+        return 'd1';
+    }
+    if (hasKv) {
+        return 'kv';
+    }
+    return 'none';
+}
+
 function isStorageUnavailableError(error) {
     const message = String(error?.message || error || '').toLowerCase();
     return message.includes('kv storage is paused')
@@ -201,6 +211,7 @@ export async function getAdminPassword(env) {
 export async function getAuthDebugInfo(env) {
     const runtimeAdminPassword = getRuntimeEnvValue(env, 'ADMIN_PASSWORD');
     const runtimeCookieSecret = getRuntimeEnvValue(env, 'COOKIE_SECRET');
+    const runtimeManifestToken = getManifestToken(env);
     const kv = getKV(env);
 
     let hasKvAdminPassword = false;
@@ -228,6 +239,7 @@ export async function getAuthDebugInfo(env) {
     return {
         hasKv: !!kv,
         hasD1: !!env?.MISUB_DB,
+        preferredStorage: getPreferredStorageMode(env, !!kv),
         adminPassword: {
             source: adminPasswordSource,
             hasRuntime: !!runtimeAdminPassword,
@@ -239,6 +251,10 @@ export async function getAuthDebugInfo(env) {
             hasRuntime: !!runtimeCookieSecret,
             hasKvValue: hasKvCookieSecret,
             mayRegenerateWithoutKv: !kv && !runtimeCookieSecret
+        },
+        manifestToken: {
+            hasRuntime: !!runtimeManifestToken,
+            isConfigured: !!runtimeManifestToken
         }
     };
 }

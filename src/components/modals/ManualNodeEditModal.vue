@@ -10,7 +10,14 @@ import { useBulkImportLogic } from '../../composables/useBulkImportLogic.js';
 import { useManualNodes } from '../../composables/useManualNodes.js';
 import { probeSource as probeSourceRequest } from '../../lib/api.js';
 import { formatDate } from '../../utils/format-utils.js';
-import { canManuallyProbeSource, getSourceProbeSummary, normalizeSourceItem } from '../../shared/source-utils.js';
+import {
+  canManuallyProbeSource,
+  getSourceProbeSummary,
+  normalizeSourceItem,
+  SOURCE_CONNECTOR_TYPE_ECH_WORKER,
+  SOURCE_KIND_CONNECTOR,
+  SOURCE_KIND_PROXY_URI
+} from '../../shared/source-utils.js';
 
 const props = defineProps({
   show: Boolean,
@@ -27,6 +34,39 @@ const { addSubscriptionsFromBulk } = useSubscriptions(markDirty);
 const { addNodesFromBulk, manualNodeGroups } = useManualNodes(markDirty);
 const { handleBulkImport } = useBulkImportLogic({ addSubscriptionsFromBulk, addNodesFromBulk });
 
+const sourceKindModel = computed({
+  get: () => normalizeSourceItem(props.editingNode).kind || SOURCE_KIND_PROXY_URI,
+  set: (value) => {
+    if (!props.editingNode) return;
+    props.editingNode.kind = value;
+    if (value === SOURCE_KIND_CONNECTOR) {
+      props.editingNode.connector_type = props.editingNode.connector_type || SOURCE_CONNECTOR_TYPE_ECH_WORKER;
+      props.editingNode.connector_config = {
+        local_protocol: 'socks5',
+        ...(props.editingNode.connector_config || {})
+      };
+    }
+  }
+});
+
+const isConnectorMode = computed(() => sourceKindModel.value === SOURCE_KIND_CONNECTOR);
+
+const connectorTypeModel = computed({
+  get: () => props.editingNode?.connector_type || SOURCE_CONNECTOR_TYPE_ECH_WORKER,
+  set: (value) => {
+    if (!props.editingNode) return;
+    props.editingNode.connector_type = value;
+  }
+});
+
+const connectorConfig = computed(() => {
+  if (!props.editingNode) return {};
+  if (!props.editingNode.connector_config || typeof props.editingNode.connector_config !== 'object') {
+    props.editingNode.connector_config = {};
+  }
+  return props.editingNode.connector_config;
+});
+
 // 浮动标签状态
 const nameFocused = ref(false);
 const urlFocused = ref(false);
@@ -34,6 +74,7 @@ const urlFocused = ref(false);
 // 协议检测
 const getProtocol = (url) => {
   if (!url) return null;
+  if (isConnectorMode.value) return { name: 'ECH', color: 'cyan' };
   const lowerUrl = url.toLowerCase().trim();
   if (lowerUrl.startsWith('anytls://')) return { name: 'AnyTLS', color: 'slate' };
   if (lowerUrl.startsWith('hysteria2://') || lowerUrl.startsWith('hy2://')) return { name: 'HY2', color: 'purple' };
@@ -55,6 +96,10 @@ const getProtocol = (url) => {
 const extractNodeName = (url) => {
   if (!url) return null;
   try {
+    if (isConnectorMode.value) {
+      const parsed = new URL(url);
+      return `ECH ${parsed.hostname}`;
+    }
     // VMess 特殊处理
     if (url.toLowerCase().startsWith('vmess://')) {
       const decoded = atob(url.slice(8));
@@ -74,6 +119,7 @@ const extractNodeName = (url) => {
 
 // 解析批量导入的节点列表
 const parsedNodes = computed(() => {
+  if (isConnectorMode.value) return [];
   if (!props.editingNode?.url) return [];
   const lines = props.editingNode.url.split('\n').map(l => l.trim()).filter(Boolean);
   return lines.map((line, index) => {
@@ -84,7 +130,7 @@ const parsedNodes = computed(() => {
 });
 
 const isMultiLine = computed(() => {
-  return props.isNew && parsedNodes.value.length > 1;
+  return !isConnectorMode.value && props.isNew && parsedNodes.value.length > 1;
 });
 
 const validLineCount = computed(() => parsedNodes.value.length);
@@ -109,7 +155,7 @@ const applySuggestedName = () => {
 };
 
 const handleConfirm = () => {
-  if (props.isNew && isMultiLine.value) {
+  if (!isConnectorMode.value && props.isNew && isMultiLine.value) {
     // Pass group if specified (though bulk import logic might need update to support group, currently logic is simple)
     // Actually handleBulkImport second arg was colorTag. Now it should be group.
     // Let's check handleBulkImport usage.
@@ -155,6 +201,7 @@ const canReprobe = computed(() => {
   return canManuallyProbeSource(normalized);
 });
 const reprobeButtonTitle = computed(() => {
+  if (isConnectorMode.value) return 'ECH Worker connector 不参与辅助探测';
   if (isMultiLine.value) return '批量导入模式不支持逐条重新探测';
   if (canReprobe.value) return '重新执行一次辅助探测';
   return '仅支持对 http(s) 或住宅代理式输入重新探测';
@@ -223,7 +270,7 @@ const handleReprobe = async () => {
         </div>
         <div>
           <h3 class="text-lg font-bold text-gray-800 dark:text-white">
-            {{ isNew ? '新增手动节点' : '编辑手动节点' }}
+            {{ isNew ? '新增手动来源' : '编辑手动来源' }}
           </h3>
           <p v-if="isNew && isMultiLine" class="text-sm text-indigo-500 mt-0.5 font-medium flex items-center gap-1">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -231,19 +278,47 @@ const handleReprobe = async () => {
             </svg>
             检测到 {{ validLineCount }} 条有效链接
           </p>
+          <p v-else-if="isConnectorMode" class="text-sm text-cyan-600 dark:text-cyan-300 mt-0.5 font-medium">
+            当前模式：ECH Worker Connector
+          </p>
         </div>
       </div>
     </template>
     
     <template #body>
       <div class="space-y-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            @click="sourceKindModel = SOURCE_KIND_PROXY_URI"
+            class="text-left px-4 py-3 misub-radius-lg border transition-colors"
+            :class="sourceKindModel === SOURCE_KIND_PROXY_URI
+              ? 'border-indigo-500 bg-indigo-50/80 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-500/10 dark:text-indigo-200'
+              : 'border-gray-200 bg-white/70 text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300'"
+          >
+            <div class="font-semibold">直连代理 / 住宅线路</div>
+            <div class="text-xs opacity-80 mt-1">支持手填 `vmess://`、`socks5://`、`http://user:pass@host:port` 等输入，也支持多行批量导入。</div>
+          </button>
+          <button
+            type="button"
+            @click="sourceKindModel = SOURCE_KIND_CONNECTOR"
+            class="text-left px-4 py-3 misub-radius-lg border transition-colors"
+            :class="sourceKindModel === SOURCE_KIND_CONNECTOR
+              ? 'border-cyan-500 bg-cyan-50/80 text-cyan-700 dark:border-cyan-400 dark:bg-cyan-500/10 dark:text-cyan-200'
+              : 'border-gray-200 bg-white/70 text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300'"
+          >
+            <div class="font-semibold">ECH Worker</div>
+            <div class="text-xs opacity-80 mt-1">作为 `connector` source 保存到 MiSub，后续可被 profile 和 manifest 选择，不会被当作普通节点测速。</div>
+          </button>
+        </div>
+
         <!-- 名称和颜色标签 - 两栏布局 -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <!-- 节点名称 -->
           <div class="relative">
              <div class="flex flex-col">
               <label for="node-name" class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 ml-1">
-                节点名称 (可选)
+                来源名称 (可选)
               </label>
               <Input
                 id="node-name"
@@ -290,6 +365,57 @@ const handleReprobe = async () => {
           </div>
         </div>
 
+        <div v-if="isConnectorMode" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="flex flex-col">
+            <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 ml-1">
+              Connector 类型
+            </label>
+            <select
+              v-model="connectorTypeModel"
+              class="block w-full px-3 py-2.5 bg-white/70 dark:bg-gray-900/50 border border-gray-200/80 dark:border-white/10 misub-radius-lg shadow-sm focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 sm:text-sm dark:text-white transition-colors"
+            >
+              <option :value="SOURCE_CONNECTOR_TYPE_ECH_WORKER">ECH Worker</option>
+            </select>
+          </div>
+
+          <div class="flex flex-col">
+            <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 ml-1">
+              本地下游协议
+            </label>
+            <select
+              v-model="connectorConfig.local_protocol"
+              class="block w-full px-3 py-2.5 bg-white/70 dark:bg-gray-900/50 border border-gray-200/80 dark:border-white/10 misub-radius-lg shadow-sm focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 sm:text-sm dark:text-white transition-colors"
+            >
+              <option value="socks5">SOCKS5</option>
+              <option value="http">HTTP</option>
+            </select>
+          </div>
+
+          <div class="flex flex-col">
+            <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 ml-1">
+              Connector Token (可选)
+            </label>
+            <input
+              v-model="connectorConfig.access_token"
+              type="text"
+              placeholder="用于访问远端 ECH Worker 的 token"
+              class="block w-full px-3 py-2.5 bg-white/70 dark:bg-gray-900/50 border border-gray-200/80 dark:border-white/10 misub-radius-lg shadow-sm focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 sm:text-sm dark:text-white transition-colors"
+            />
+          </div>
+
+          <div class="flex flex-col">
+            <label class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 ml-1">
+              Connector Path (可选)
+            </label>
+            <input
+              v-model="connectorConfig.path"
+              type="text"
+              placeholder="/connect"
+              class="block w-full px-3 py-2.5 bg-white/70 dark:bg-gray-900/50 border border-gray-200/80 dark:border-white/10 misub-radius-lg shadow-sm focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 sm:text-sm dark:text-white transition-colors"
+            />
+          </div>
+        </div>
+
         <!-- 节点链接 -->
         <div class="relative group">
           <div 
@@ -327,13 +453,20 @@ const handleReprobe = async () => {
                 @blur="urlFocused = false"
                 @input="$emit('input-url', $event)"
                 class="flex-1 w-full bg-transparent border-0 focus:ring-0 dark:text-white placeholder-gray-400 text-sm font-mono resize-none py-3 pl-3 pr-20 min-h-[160px]"
-                placeholder="输入单个链接，或粘贴多行链接批量导入..."
+                :placeholder="isConnectorMode
+                  ? '输入 ECH Worker 的 HTTP/HTTPS 地址，例如 https://ech.example.com/connect'
+                  : '输入单个链接，或粘贴多行链接批量导入...'"
               ></textarea>
             </div>
             
              <!-- Focus Glow -->
             <div class="absolute inset-0 misub-radius-lg pointer-events-none transition-opacity duration-300 opacity-0 group-focus-within:opacity-100 ring-1 ring-primary-500/20"></div>
           </div>
+        </div>
+
+        <div v-if="isConnectorMode" class="misub-radius-lg border px-4 py-3 text-sm bg-cyan-50/70 text-cyan-700 border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-200 dark:border-cyan-500/20">
+          <div class="font-semibold mb-1">ECH Worker 说明</div>
+          <div>这类来源会以 `connector` source 的形式进入 MiSub，可以被 profile 选择并出现在 machine manifest 中，但不会被当前页面当成普通代理节点测速。</div>
         </div>
 
         <!-- 批量导入预览 -->

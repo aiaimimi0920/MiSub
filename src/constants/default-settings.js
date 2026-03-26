@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS = {
     NotifyThresholdPercent: 90,
     enableTrafficNode: false,
     enablePublicPage: true,
-    storageType: 'kv',
+    storageType: 'd1',
     autoUpdateInterval: 0, // 分钟，0表示禁用自动更新
 defaultPrefixSettings: {
 enableManualNodes: true,
@@ -67,14 +67,48 @@ prependGroupName: false
     guestbook: {
         enabled: false,
         allowAnonymous: true
+    },
+    aggregatorSync: {
+        enabled: false,
+        sourceUrl: 'https://sub.aiaimimi.com/internal/crawledsubs.json',
+        managedGroup: 'Aggregator Discovery',
+        namePrefix: 'Aggregator Discovery',
+        secondaryProbeEnabled: true,
+        stableSourceEnabled: true,
+        stableSourceUrl: 'https://sub.aiaimimi.com/subs/clash.yaml',
+        stableSourceName: 'Aggregator Stable',
+        stableSourceGroup: 'Aggregator Stable',
+        defaultPublicProfileEnabled: true,
+        defaultPublicProfileId: 'aggregator_global',
+        defaultPublicProfileCustomId: 'aggregator-global',
+        defaultPublicProfileName: 'Aggregator Global',
+        defaultPublicProfileDescription: 'Public stable aggregator output managed by MiSub',
+        runOnCron: true,
+        autoDisableMissing: true,
+        lastSyncAt: '',
+        lastSyncStatus: 'idle',
+        lastSyncMessage: '',
+        lastImportedCount: 0,
+        lastDiscoveryImportedCount: 0,
+        lastDiscoveryProbeAt: '',
+        lastDiscoveryProbedCount: 0,
+        lastDiscoveryVerifiedCount: 0,
+        lastDiscoveryUnreachableCount: 0,
+        lastDiscoveryInconclusiveCount: 0,
+        lastDiscoverySkippedCount: 0
     }
 };
 
 export const DEFAULT_NODE_FORM = {
     name: '',
     url: '',
+    input: '',
+    kind: 'proxy_uri',
     enabled: true,
-    fetchProxy: ''
+    fetchProxy: '',
+    group: '',
+    connector_type: '',
+    connector_config: {}
 };
 
 export const DEFAULT_PROFILE_FORM = {

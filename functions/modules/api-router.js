@@ -37,6 +37,7 @@ import {
 } from './handlers/guestbook-handler.js';
 import { handleGithubReleaseRequest } from './handlers/github-proxy-handler.js'; // [NEW] Import handler
 import { handleParseSubscription } from './parse-subscription-handler.js';
+import { handleAggregatorSyncRequest } from './aggregator-handler.js';
 import { handleBatchSourceProbeRequest, handleManifestRequest, handleSourceProbeRequest } from './source-handler.js';
 
 // 常量定义
@@ -352,6 +353,9 @@ export async function handleApiRequest(request, env) {
 
         case '/source_probe_batch':
             return await handleBatchSourceProbeRequest(request, env);
+
+        case '/aggregator_sync':
+            return await handleAggregatorSyncRequest(request, env);
 
         case '/logs':
             if (request.method === 'GET') {

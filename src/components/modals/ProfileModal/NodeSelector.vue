@@ -61,7 +61,7 @@ const orderedSelectedNodes = computed({
 <template>
   <div v-if="nodes.length > 0" class="space-y-2">
     <div class="flex justify-between items-center mb-2">
-      <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">选择手动节点</h4>
+      <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">选择手动来源 / Connector</h4>
       <div class="space-x-2">
         <button @click="emit('select-all')" class="text-xs text-indigo-600 hover:underline">全选</button>
         <button @click="emit('deselect-all')" class="text-xs text-indigo-600 hover:underline">全不选</button>
@@ -85,7 +85,7 @@ const orderedSelectedNodes = computed({
     </div>
 
     <div class="relative mb-2">
-      <input type="text" v-model="searchModel" placeholder="搜索节点..."
+      <input type="text" v-model="searchModel" placeholder="搜索手动来源或 Connector..."
         class="w-full pl-9 pr-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 misub-radius-md shadow-xs focus:outline-hidden focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500" />
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg"
         fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -104,7 +104,7 @@ const orderedSelectedNodes = computed({
         </label>
       </div>
       <div v-if="filteredNodes.length === 0" class="text-center text-gray-500 text-sm py-4">
-        没有找到匹配的节点。
+        没有找到匹配的来源。
       </div>
     </div>
 
@@ -128,7 +128,7 @@ const orderedSelectedNodes = computed({
             </span>
             <span class="text-xs font-medium text-indigo-600 dark:text-indigo-400 w-5">{{ index + 1 }}</span>
             <span class="text-sm text-gray-800 dark:text-gray-200 truncate flex-1" :title="element.name">
-              {{ element.name || '未命名节点' }}
+              {{ element.name || '未命名来源' }}
             </span>
             <button @click="emit('toggle-selection', element.id)"
               class="text-gray-400 hover:text-red-500 transition-colors" title="移除">
@@ -143,6 +143,6 @@ const orderedSelectedNodes = computed({
   </div>
   <div v-else
     class="text-center text-sm text-gray-500 p-4 bg-gray-50 dark:bg-gray-900/50 misub-radius-md flex items-center justify-center h-full">
-    没有可用的手动节点
+    没有可用的手动来源或 Connector
   </div>
 </template>

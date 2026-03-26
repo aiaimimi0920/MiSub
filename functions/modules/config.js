@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS = {
     NotifyThresholdPercent: 90,
     enableTrafficNode: false,
     enablePublicPage: true,
-    storageType: 'kv',
+    storageType: 'd1',
     defaultPrefixSettings: {
         enableManualNodes: true,
         enableSubscriptions: true,
@@ -77,6 +77,35 @@ export const DEFAULT_SETTINGS = {
     guestbook: {
         enabled: false,           // 总开关
         allowAnonymous: true      // 是否允许匿名
+    },
+    aggregatorSync: {
+        enabled: false,
+        sourceUrl: 'https://sub.aiaimimi.com/internal/crawledsubs.json',
+        managedGroup: 'Aggregator Discovery',
+        namePrefix: 'Aggregator Discovery',
+        secondaryProbeEnabled: true,
+        stableSourceEnabled: true,
+        stableSourceUrl: 'https://sub.aiaimimi.com/subs/clash.yaml',
+        stableSourceName: 'Aggregator Stable',
+        stableSourceGroup: 'Aggregator Stable',
+        defaultPublicProfileEnabled: true,
+        defaultPublicProfileId: 'aggregator_global',
+        defaultPublicProfileCustomId: 'aggregator-global',
+        defaultPublicProfileName: 'Aggregator Global',
+        defaultPublicProfileDescription: 'Public stable aggregator output managed by MiSub',
+        runOnCron: true,
+        autoDisableMissing: true,
+        lastSyncAt: '',
+        lastSyncStatus: 'idle',
+        lastSyncMessage: '',
+        lastImportedCount: 0,
+        lastDiscoveryImportedCount: 0,
+        lastDiscoveryProbeAt: '',
+        lastDiscoveryProbedCount: 0,
+        lastDiscoveryVerifiedCount: 0,
+        lastDiscoveryUnreachableCount: 0,
+        lastDiscoveryInconclusiveCount: 0,
+        lastDiscoverySkippedCount: 0
     }
 };
 

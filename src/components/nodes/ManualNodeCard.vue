@@ -1,6 +1,12 @@
 <script setup>
 import { computed } from 'vue';
-import { canManuallyProbeSource, getSourceProbeSummary, shouldShowSourceProbeNotice } from '../../shared/source-utils.js';
+import {
+  canManuallyProbeSource,
+  getConnectorType,
+  getSourceProbeSummary,
+  isProxyURISource,
+  shouldShowSourceProbeNotice
+} from '../../shared/source-utils.js';
 
 const props = defineProps({
   node: {
@@ -17,6 +23,9 @@ const props = defineProps({
 const emit = defineEmits(['delete', 'edit', 'toggle-select', 'filter-group', 'ping', 'reprobe']);
 
 const getProtocol = (url) => {
+  if (props.node?.kind === 'connector') {
+    return getConnectorType(props.node) === 'ech_worker' ? 'ech' : 'connector';
+  }
   // ... (protocol logic unchanged)
   try {
     if (!url) return 'unknown';
@@ -47,6 +56,8 @@ const protocolStyle = computed(() => {
   // ... (protocol style map unchanged)
   const p = protocol.value;
   switch (p) {
+    case 'ech': return { text: 'ECH', style: 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300' };
+    case 'connector': return { text: 'CONNECTOR', style: 'bg-sky-500/20 text-sky-600 dark:text-sky-300' };
     case 'anytls': return { text: 'AnyTLS', style: 'bg-slate-500/20 text-slate-500 dark:text-slate-400' };
     case 'vless': return { text: 'VLESS', style: 'bg-blue-500/20 text-blue-500 dark:text-blue-400' };
     case 'hysteria2': return { text: 'HY2', style: 'bg-purple-500/20 text-purple-500 dark:text-purple-400' };
@@ -67,6 +78,7 @@ const protocolStyle = computed(() => {
 const probeSummary = computed(() => getSourceProbeSummary(props.node));
 const showProbeNotice = computed(() => shouldShowSourceProbeNotice(props.node));
 const canReprobe = computed(() => canManuallyProbeSource(props.node));
+const canPing = computed(() => isProxyURISource(props.node));
 
 
 </script>
@@ -139,7 +151,7 @@ const canReprobe = computed(() => canManuallyProbeSource(props.node));
       </div>
     </div>
     <div v-if="!isSelectionMode" class="shrink-0 flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
-        <button @click.stop="emit('ping')" class="p-1.5 misub-radius-md hover:bg-green-500/10 text-gray-400 hover:text-green-500" title="测速" :disabled="isPinging" :class="{ 'animate-pulse text-green-500': isPinging }">
+        <button v-if="canPing" @click.stop="emit('ping')" class="p-1.5 misub-radius-md hover:bg-green-500/10 text-gray-400 hover:text-green-500" title="测速" :disabled="isPinging" :class="{ 'animate-pulse text-green-500': isPinging }">
            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
         </button>
         <button v-if="canReprobe" @click.stop="emit('reprobe')" class="p-1.5 misub-radius-md hover:bg-amber-500/10 text-gray-400 hover:text-amber-500 disabled:opacity-50" title="重新探测来源" :disabled="isReprobing">

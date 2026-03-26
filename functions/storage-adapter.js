@@ -10,6 +10,11 @@ export const STORAGE_TYPES = {
     D1: 'd1'
 };
 
+function normalizeStorageType(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return Object.values(STORAGE_TYPES).includes(normalized) ? normalized : '';
+}
+
 // 数据键映射
 const DATA_KEYS = {
     SUBSCRIPTIONS: 'misub_subscriptions_v1',
@@ -367,8 +372,10 @@ export class StorageFactory {
      * @param {string} storageType - 存储类型 ('kv' | 'd1')
      * @returns {KVStorageAdapter|D1StorageAdapter}
      */
-    static createAdapter(env, storageType = STORAGE_TYPES.KV) {
-        switch (storageType) {
+    static createAdapter(env, storageType = STORAGE_TYPES.D1) {
+        const resolvedStorageType = normalizeStorageType(storageType) || StorageFactory.getDefaultStorageType(env);
+
+        switch (resolvedStorageType) {
             case STORAGE_TYPES.D1:
                 if (!env.MISUB_DB) {
                     console.warn('[Storage] D1 database not available, falling back to KV');
@@ -384,13 +391,31 @@ export class StorageFactory {
             case STORAGE_TYPES.KV:
             default: {
                 const kv = StorageFactory.resolveKV(env);
-                if (!kv) {
-                    console.warn('[Storage] No KV binding found, using noop adapter');
-                    return new NoopStorageAdapter();
+                if (kv) {
+                    return new KVStorageAdapter(kv);
                 }
-                return new KVStorageAdapter(kv);
+
+                if (env.MISUB_DB) {
+                    console.warn('[Storage] KV binding not available, falling back to D1');
+                    return new D1StorageAdapter(env.MISUB_DB);
+                }
+
+                console.warn('[Storage] No KV or D1 binding found, using noop adapter');
+                return new NoopStorageAdapter();
             }
         }
+    }
+
+    static getDefaultStorageType(env) {
+        if (env?.MISUB_DB) {
+            return STORAGE_TYPES.D1;
+        }
+
+        if (StorageFactory.resolveKV(env)) {
+            return STORAGE_TYPES.KV;
+        }
+
+        return STORAGE_TYPES.D1;
     }
 
 
@@ -402,13 +427,14 @@ export class StorageFactory {
     static async getStorageType(env) {
         try {
             const settings = await SettingsCache.get(env);
-            if (settings?.storageType) {
-                return settings.storageType;
+            const configuredStorageType = normalizeStorageType(settings?.storageType);
+            if (configuredStorageType) {
+                return configuredStorageType;
             }
-            return STORAGE_TYPES.KV;
+            return StorageFactory.getDefaultStorageType(env);
         } catch (error) {
             console.error('[Storage] Failed to get storage type:', error);
-            return STORAGE_TYPES.KV;
+            return StorageFactory.getDefaultStorageType(env);
         }
     }
 

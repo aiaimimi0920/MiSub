@@ -62,7 +62,7 @@ export function useSettingsLogic() {
 
                 // 确保 storageType 有默认值
                 if (!settings.value.storageType) {
-                    settings.value.storageType = 'kv';
+                    settings.value.storageType = 'd1';
                 }
             } else {
                 showToast(`加载设置失败: ${result.error}`, 'error');
@@ -89,7 +89,7 @@ export function useSettingsLogic() {
 
         isSaving.value = true;
         try {
-            if (!settings.value.storageType) settings.value.storageType = 'kv';
+            if (!settings.value.storageType) settings.value.storageType = 'd1';
 
             const settingsToSave = {
                 ...settings.value,

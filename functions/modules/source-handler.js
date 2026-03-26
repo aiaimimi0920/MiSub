@@ -2,6 +2,8 @@ import { StorageFactory } from '../storage-adapter.js';
 import { KV_KEY_PROFILES, KV_KEY_SUBS } from './config.js';
 import { createJsonResponse, getManifestToken } from './utils.js';
 import {
+    SOURCE_KIND_CONNECTOR,
+    SOURCE_KIND_PROXY_URI,
     SOURCE_KIND_SUBSCRIPTION,
     dedupeSources,
     normalizeSourceCollection,
@@ -44,7 +46,7 @@ function selectProfileSources(profile, allSources) {
     for (const id of profile.manualNodes || []) {
         const source = sourceMap.get(id);
         if (!source || source.enabled !== true) continue;
-        if (source.kind === SOURCE_KIND_SUBSCRIPTION) continue;
+        if (![SOURCE_KIND_PROXY_URI, SOURCE_KIND_CONNECTOR].includes(source.kind)) continue;
         selected.push(source);
     }
 

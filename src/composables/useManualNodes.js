@@ -10,16 +10,19 @@ import { filterManualNodes, isManualNodeEntry } from './manual-nodes/filters.js'
 import { buildDedupPlan as buildDedupPlanCore } from './manual-nodes/dedup.js';
 import { buildAutoSortedSubscriptions } from './manual-nodes/sorting.js';
 import { collectManualNodeGroups, buildGroupedManualNodes } from './manual-nodes/groups.js';
-import { canManuallyProbeSource, getSourceProbeSummary, isSubscriptionSource } from '../shared/source-utils.js';
+import {
+  canManuallyProbeSource,
+  getSourceProbeSummary,
+  isProxyURISource,
+  isSubscriptionSource
+} from '../shared/source-utils.js';
 
 export function useManualNodes(markDirty) {
   const { showToast } = useToastStore();
   const dataStore = useDataStore();
   const { subscriptions: allSubscriptions } = storeToRefs(dataStore);
 
-  // Manual Nodes are items in subscriptions that are NOT http/https
-  // We filter from the shared store state
-  // [FIX] 添加更严格的验证,确保只识别有效的手工节点
+  // Manual sources include direct proxy inputs and connectors.
   const manualNodes = computed(() => {
     return (allSubscriptions.value || []).filter(isManualNodeEntry);
   });
@@ -375,6 +378,10 @@ export function useManualNodes(markDirty) {
       if (pingingNodes.value.has(nodeId)) return;
       const node = manualNodes.value.find(n => n.id === nodeId);
       if (!node) return;
+      if (!isProxyURISource(node)) {
+          showToast('当前来源不是直连代理，不能执行测速', 'info');
+          return;
+      }
   
       const { host, port } = extractHostAndPort(node.url);
       if (!host || !port) {
@@ -398,7 +405,7 @@ export function useManualNodes(markDirty) {
 
   // 批量并发测试所有开启的手动节点
   async function pingAllNodes() {
-      const nodesToTest = enabledManualNodes.value.map(n => n.id);
+      const nodesToTest = enabledManualNodes.value.filter(isProxyURISource).map(n => n.id);
       if (nodesToTest.length === 0) return;
       
       showToast(`开始测速 ${nodesToTest.length} 个节点...`, 'info');

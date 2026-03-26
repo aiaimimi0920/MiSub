@@ -1,5 +1,5 @@
 import { NODE_PROTOCOL_REGEX } from '@/constants/nodeProtocols.js';
-import { isProxyURISource } from '@/shared/source-utils.js';
+import { isConnectorSource, isProxyURISource } from '@/shared/source-utils.js';
 
 export const countryCodeMap = {
   'hk': ['🇭🇰', '香港', 'HK'],
@@ -64,6 +64,7 @@ export function isManualNodeEntry(item) {
 
   const trimmedUrl = (item.input || item.url).trim();
   if (!trimmedUrl) return false;
+  if (isConnectorSource(item)) return true;
   if (!isProxyURISource(item)) return false;
   return NODE_PROTOCOL_REGEX.test(trimmedUrl);
 }

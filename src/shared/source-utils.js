@@ -7,6 +7,7 @@
 export const SOURCE_KIND_SUBSCRIPTION = 'subscription';
 export const SOURCE_KIND_PROXY_URI = 'proxy_uri';
 export const SOURCE_KIND_CONNECTOR = 'connector';
+export const SOURCE_CONNECTOR_TYPE_ECH_WORKER = 'ech_worker';
 export const SOURCE_DETECTED_KIND_UNKNOWN = 'unknown';
 
 export const SOURCE_PROBE_STATUS_UNCHECKED = 'unchecked';
@@ -238,6 +239,19 @@ export function normalizeSourceItem(item, options = {}) {
         normalized.plusAsSpace = source.plusAsSpace === true;
     }
 
+    if (kind === SOURCE_KIND_CONNECTOR) {
+        normalized.connector_type = normalizeString(
+            source.connector_type || normalized.options?.connector_type
+        );
+        normalized.connector_config =
+            normalized.options?.connector_config && typeof normalized.options.connector_config === 'object'
+                ? { ...normalized.options.connector_config }
+                : {};
+    } else {
+        normalized.connector_type = '';
+        normalized.connector_config = {};
+    }
+
     return normalized;
 }
 
@@ -256,6 +270,15 @@ export function isProxyURISource(item) {
 
 export function isConnectorSource(item) {
     return normalizeSourceItem(item).kind === SOURCE_KIND_CONNECTOR;
+}
+
+export function getConnectorType(item) {
+    return normalizeSourceItem(item).connector_type || '';
+}
+
+export function isEchWorkerSource(item) {
+    const normalized = normalizeSourceItem(item);
+    return normalized.kind === SOURCE_KIND_CONNECTOR && normalized.connector_type === SOURCE_CONNECTOR_TYPE_ECH_WORKER;
 }
 
 export function getSourceKey(item) {

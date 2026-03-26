@@ -177,11 +177,24 @@ export async function checkAndNotify(sub, settings, env) {
 export async function handleCronTrigger(env) {
     const { StorageFactory } = await import('../storage-adapter.js');
     const { checkAndNotify } = await import('./notifications.js');
+    const { runAggregatorSync } = await import('./aggregator-sync.js');
 
     const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
-    const originalSubs = normalizeSourceCollection(await storageAdapter.get(KV_KEY_SUBS) || []);
-    const allSubs = JSON.parse(JSON.stringify(originalSubs)); // 深拷贝以便比较
-    const settings = await storageAdapter.get(KV_KEY_SETTINGS) || DEFAULT_SETTINGS;
+    let originalSubs = normalizeSourceCollection(await storageAdapter.get(KV_KEY_SUBS) || []);
+    let allSubs = JSON.parse(JSON.stringify(originalSubs)); // 深拷贝以便比较
+    let settings = await storageAdapter.get(KV_KEY_SETTINGS) || DEFAULT_SETTINGS;
+
+    if (settings?.aggregatorSync?.enabled && settings?.aggregatorSync?.runOnCron !== false) {
+        try {
+            const syncResult = await runAggregatorSync(env, storageAdapter);
+            originalSubs = normalizeSourceCollection(syncResult.sources || []);
+            allSubs = JSON.parse(JSON.stringify(originalSubs));
+            settings = syncResult.nextSettings || settings;
+            console.info(`[Cron] Aggregator sync completed: ${syncResult.summary?.message || 'ok'}`);
+        } catch (syncError) {
+            console.error('[Cron] Aggregator sync failed:', syncError);
+        }
+    }
 
     // 只处理 HTTP 订阅源（排除手动节点）
     const httpSubscriptions = allSubs.filter(sub => sub.enabled && isSubscriptionSource(sub));

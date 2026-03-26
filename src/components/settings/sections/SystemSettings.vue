@@ -107,12 +107,12 @@ const emit = defineEmits(['migrate']);
                 <div class="flex items-center">
                     <input type="radio" value="kv" v-model="settings.storageType"
                         class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-gray-600 dark:bg-gray-800">
-                    <span class="ml-3 text-sm dark:text-gray-300">KV 存储</span>
+                    <span class="ml-3 text-sm dark:text-gray-300">KV 存储（兼容 / 迁移）</span>
                 </div>
                 <div class="flex items-center">
                     <input type="radio" value="d1" v-model="settings.storageType"
                         class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-gray-600 dark:bg-gray-800">
-                    <span class="ml-3 text-sm dark:text-gray-300">D1 数据库 (推荐)</span>
+                    <span class="ml-3 text-sm dark:text-gray-300">D1 数据库（默认 / Cloudflare 主路径）</span>
                 </div>
 
                 <!-- D1 Migration Section -->
@@ -120,7 +120,7 @@ const emit = defineEmits(['migrate']);
                     class="mt-4 p-4 bg-blue-50/80 dark:bg-blue-900/20 misub-radius-lg border border-blue-100/80 dark:border-blue-800/60">
                     <h4 class="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">迁移到 D1 数据库</h4>
                     <p class="text-xs text-blue-600 dark:text-blue-400 mb-3">
-                        D1 数据库提供更好的性能和无限的写入能力。迁移前请确保已完成以下步骤:
+                        当前生产推荐使用 Cloudflare Pages + D1。KV 仅保留历史兼容和迁移用途。迁移前请确保已完成以下步骤:
                     </p>
                     <ol class="list-decimal list-inside text-xs text-blue-600 dark:text-blue-400 mb-3 space-y-1">
                         <li>在 Cloudflare 后台创建 D1 数据库，并在 Pages 设置中绑定为 <code>MISUB_DB</code></li>

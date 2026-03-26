@@ -57,6 +57,16 @@
 
 ### 🆕 最新功能
 
+- **🛰️ Aggregator 自动同步**
+  - 可直接接入 `https://sub.aiaimimi.com/internal/crawledsubs.json`
+  - 支持手动触发与 Cron 自动同步
+  - 将 crawler 发现的公开订阅自动并入 MiSub 全局 source registry
+
+- **🔌 ECH Worker Connector**
+  - 支持将 `ECH Worker` 作为 `kind=connector` 的来源录入 MiSub
+  - 可进入 profile 选择和 machine manifest
+  - 当前阶段仅托管 connector 元数据，不在 MiSub 内部执行 connector 运行时
+
 - **📝 订阅备注**
   - 为每个订阅添加备注信息
   - 记录官网、价格、到期时间等
@@ -79,15 +89,15 @@
 
 ### 💾 双重存储支持
 
-- **Cloudflare KV 存储**
-  - 极快的查询速度
-  - 适合轻度使用
-  - 简单易配置
-
-- **Cloudflare D1 数据库**
+- **Cloudflare D1 数据库（生产主路径）**
+  - Cloudflare Pages 部署的默认与推荐持久化后端
   - 无写入频率限制
-  - 适合频繁更新
-  - 一键数据迁移
+  - 适合频繁更新与 manifest 中心场景
+
+- **Cloudflare KV 存储（兼容 / 迁移）**
+  - 仅保留给历史数据迁移和兼容运行
+  - 不再是 Cloudflare 生产环境的首选主存储
+  - 可与 D1 并存，用于平滑迁移旧数据
 
 ### 🔐 安全与定制
 
@@ -148,16 +158,7 @@
 
 ## 📚 部署指南
 
-### 1. 绑定 KV 命名空间 (必需)
-
-部署完成后,进入项目设置:
-
-1. `设置` → `函数` → `KV 命名空间绑定`
-2. 点击 `添加绑定`
-3. **变量名称**: `MISUB_KV`
-4. **KV 命名空间**: 选择或创建一个 KV 命名空间
-
-### 2. 绑定 D1 数据库 (可选,推荐)
+### 1. 绑定 D1 数据库（Cloudflare 主路径必需）
 
 **创建 D1 数据库:**
 ```bash
@@ -177,6 +178,15 @@ wrangler d1 execute misub --file=schema.sql --remote
 
 > 💡 若无法初始化,可在 Cloudflare 控制台手动执行 `schema.sql`
 
+### 2. 绑定 KV 命名空间（兼容 / 迁移，可选）
+
+部署完成后,进入项目设置:
+
+1. `设置` → `函数` → `KV 命名空间绑定`
+2. 点击 `添加绑定`
+3. **变量名称**: `MISUB_KV`
+4. **KV 命名空间**: 选择或创建一个 KV 命名空间
+
 ### 3. 设置环境变量
 
 在 `设置` → `环境变量` 中添加 **生产环境** 变量：
@@ -185,6 +195,7 @@ wrangler d1 execute misub --file=schema.sql --remote
 
 | 变量名 | 说明 | 示例 |
 |--------|------|------|
+| `MANIFEST_TOKEN` | 机器消费 `GET /api/manifest/:profileId` 的专用 Bearer Token | `long_random_machine_token` |
 | `ADMIN_PASSWORD` | 管理员登录密码 | `your_secure_password` (未设置则默认为 `admin`) |
 | `COOKIE_SECRET` | Cookie 加密密钥 | `64位随机字符串` (推荐留空，系统自动生成) |
 
@@ -195,6 +206,7 @@ wrangler d1 execute misub --file=schema.sql --remote
 | `CORS_ORIGINS` | 允许跨域访问的来源(逗号分隔)，同域可不填 | `https://example.com,http://localhost:5173` |
 | `MISUB_PUBLIC_URL` | 对外访问的公开域名，用于订阅转换回调（Docker/反代必填） | `https://your-domain.com` |
 | `MISUB_CALLBACK_URL` | 订阅转换回调基础地址（优先级高于 MISUB_PUBLIC_URL） | `http://misub:8080` |
+| `MISUB_KV` | 历史兼容 KV 绑定，用于迁移或保留旧数据读取能力 | `bound namespace` |
 
 **前端构建变量（可选）：**
 
@@ -207,6 +219,22 @@ wrangler d1 execute misub --file=schema.sql --remote
 ### 4. 重新部署
 
 完成配置后,在 `部署` 选项卡重新部署项目。
+
+### 5. Manifest 机器接口
+
+用于 `EasyProxiesV2` 等机器消费者的正式接口：
+
+- `GET /api/manifest/:profileId`
+
+鉴权方式：
+
+- `Authorization: Bearer <MANIFEST_TOKEN>`
+
+约束：
+
+- `profileId` 可以是 profile `id` 或 `customId`
+- 返回目标 profile 中启用的 `subscription`、`proxy_uri` 与 `connector`
+- `connector` 当前只输出元数据，不在 MiSub 内部执行
 
 ---
 <s>
@@ -228,6 +256,7 @@ docker compose up -d --build
 
 在 `docker-compose.yml` 中配置：
 
+- `MANIFEST_TOKEN` 机器消费 `/api/manifest/:profileId` 的 Bearer Token
 - `ADMIN_PASSWORD` 管理员密码（可选，默认 `admin`）
 - `COOKIE_SECRET` Cookie 加密密钥（可选，推荐留空自动生成）
 - `CORS_ORIGINS` 允许跨域访问的来源（可选）
@@ -333,6 +362,20 @@ http://<vps-ip>:8080
 4. (可选) 添加备注信息
 5. (可选) 设置过滤规则
 6. 保存订阅
+
+### 添加手动来源 / Connector
+
+1. 点击 `新增手动来源`
+2. 选择来源类型：
+   - 直连代理 / 住宅线路
+   - `ECH Worker`
+3. 对于直连代理，可直接填写：
+   - `vmess://` / `vless://` / `trojan://` / `ss://`
+   - `socks5://...`
+   - `http://user:pass@host:port`
+   - 裸住宅输入 `user:pass@host:port`（会自动规范化）
+4. 对于 `ECH Worker`，填写 Worker 地址与可选的 connector 配置
+5. 保存后即可在 profile 中选择，并进入 machine manifest
 
 ### 创建订阅组
 

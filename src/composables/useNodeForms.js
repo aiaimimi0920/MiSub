@@ -2,7 +2,12 @@ import { ref } from 'vue';
 import { useToastStore } from '../stores/toast.js';
 import { extractNodeName } from '../lib/utils.js';
 import { generateNodeId } from '../utils/id.js';
-import { isProxyURISource, normalizeSourceItem } from '../shared/source-utils.js';
+import {
+    isConnectorSource,
+    isProxyURISource,
+    normalizeSourceItem,
+    SOURCE_CONNECTOR_TYPE_ECH_WORKER
+} from '../shared/source-utils.js';
 
 const isDev = import.meta.env.DEV;
 
@@ -21,7 +26,10 @@ export function useNodeForms({ addNode, updateNode }) {
             input: '',
             kind: 'proxy_uri',
             enabled: true,
-            colorTag: null
+            colorTag: null,
+            group: '',
+            connector_type: SOURCE_CONNECTOR_TYPE_ECH_WORKER,
+            connector_config: {}
         };
         showModal.value = true;
     };
@@ -56,7 +64,12 @@ export function useNodeForms({ addNode, updateNode }) {
             return;
         }
         const normalized = normalizeSourceItem(editingNode.value);
-        if (!isProxyURISource(normalized)) {
+        if (isConnectorSource(normalized)) {
+            if (!/^https?:\/\//i.test(normalized.input)) {
+                showToast('ECH Worker 连接器请输入有效的 HTTP/HTTPS 地址', 'error');
+                return;
+            }
+        } else if (!isProxyURISource(normalized)) {
             showToast('请输入有效的节点链接或代理地址', 'error');
             return;
         }

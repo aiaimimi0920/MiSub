@@ -214,3 +214,11 @@ export async function probeSources(sources) {
         return handleApiError(error, 'probeSources');
     }
 }
+
+export async function runAggregatorSync(settings = null) {
+    try {
+        return await api.post('/api/aggregator_sync', settings ? { settings } : {});
+    } catch (error) {
+        return handleApiError(error, 'runAggregatorSync');
+    }
+}

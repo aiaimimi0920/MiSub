@@ -3,7 +3,13 @@ import { computed } from 'vue';
 import { extractHostAndPort } from '../../lib/utils.js';
 import { useToastStore } from '../../stores/toast.js';
 import { formatDate } from '../../utils/format-utils.js';
-import { canManuallyProbeSource, getSourceProbeSummary, shouldShowSourceProbeNotice } from '../../shared/source-utils.js';
+import {
+  canManuallyProbeSource,
+  getConnectorType,
+  getSourceProbeSummary,
+  isProxyURISource,
+  shouldShowSourceProbeNotice
+} from '../../shared/source-utils.js';
 
 const props = defineProps({
   node: {
@@ -25,6 +31,9 @@ const emit = defineEmits(['delete', 'edit', 'toggle-select', 'filter-group', 'pi
 const { showToast } = useToastStore();
 
 const getProtocol = (url) => {
+  if (props.node?.kind === 'connector') {
+    return getConnectorType(props.node) === 'ech_worker' ? 'ech' : 'connector';
+  }
   try {
     if (!url) return 'unknown';
     const lowerUrl = url.toLowerCase();
@@ -53,6 +62,8 @@ const hostAndPort = computed(() => extractHostAndPort(props.node.url));
 const protocolStyle = computed(() => {
   const p = protocol.value;
   const styles = {
+    ech: { text: 'ECH', style: 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-300' },
+    connector: { text: 'CONNECTOR', style: 'bg-sky-500/20 text-sky-600 dark:text-sky-300' },
     anytls: { text: 'AnyTLS', style: 'bg-slate-500/20 text-slate-500 dark:text-slate-400' },
     vless: { text: 'VLESS', style: 'bg-blue-500/20 text-blue-500 dark:text-blue-400' },
     hysteria2: { text: 'HY2', style: 'bg-purple-500/20 text-purple-500 dark:text-purple-400' },
@@ -78,6 +89,7 @@ const probeTimeText = computed(() => {
   return `最近探测 ${formatDate(props.node.last_probe_at, 'relative')}`;
 });
 const canReprobe = computed(() => canManuallyProbeSource(props.node));
+const canPing = computed(() => isProxyURISource(props.node));
 
 const copyToClipboard = async (text) => {
   try {
@@ -144,7 +156,7 @@ const copyToClipboard = async (text) => {
 
             <!-- Header Actions for Mobile -->
             <div v-if="!isSelectionMode" class="flex items-center gap-0.5 shrink-0">
-              <button @click.stop="emit('ping')" class="p-1.5 text-gray-400 hover:text-green-500 transition-colors" title="测速" :disabled="isPinging" :class="{ 'animate-pulse text-green-500': isPinging }">
+              <button v-if="canPing" @click.stop="emit('ping')" class="p-1.5 text-gray-400 hover:text-green-500 transition-colors" title="测速" :disabled="isPinging" :class="{ 'animate-pulse text-green-500': isPinging }">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
               </button>
               <button v-if="canReprobe" @click.stop="emit('reprobe')" class="p-1.5 text-gray-400 hover:text-amber-500 transition-colors disabled:opacity-50" title="重新探测来源" :disabled="isReprobing">
@@ -256,7 +268,7 @@ const copyToClipboard = async (text) => {
       </div>
 
       <div v-if="!isSelectionMode" class="shrink-0 flex items-center gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <button 
+        <button v-if="canPing"
           @click.stop="emit('ping')" 
           class="p-2 misub-radius-md hover:bg-green-500/10 text-gray-400 hover:text-green-500 min-w-[44px] min-h-[44px] lg:min-w-0 lg:min-h-0 flex items-center justify-center transition-colors" 
           title="测速"

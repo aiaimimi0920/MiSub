@@ -86,7 +86,7 @@ function looksLikeSubscriptionPayload(text, contentType = '') {
     }) || /\b(yaml|yml|json|clash|sing-box|base64)\b/i.test(contentType);
 }
 
-async function fetchWithTimeout(input, init = {}, timeoutMs = PROBE_TIMEOUT_MS) {
+async function fetchWithTimeout(input, init = {}, timeoutMs = PROBE_TIMEOUT_MS, fetchImpl = fetch) {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     let timeoutId = null;
 
@@ -95,7 +95,7 @@ async function fetchWithTimeout(input, init = {}, timeoutMs = PROBE_TIMEOUT_MS) 
     }
 
     try {
-        return await fetch(input, {
+        return await fetchImpl(input, {
             redirect: 'follow',
             ...init,
             signal: controller?.signal
@@ -105,9 +105,10 @@ async function fetchWithTimeout(input, init = {}, timeoutMs = PROBE_TIMEOUT_MS) 
     }
 }
 
-async function probeSource(source) {
+async function probeSource(source, options = {}) {
     const normalized = normalizeSourceItem(source);
     const now = new Date().toISOString();
+    const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : fetch;
 
     if (isLikelyHTTPProxyInput(normalized.input)) {
         return withProbeMetadata(normalized, {
@@ -130,7 +131,7 @@ async function probeSource(source) {
                 'Accept': '*/*',
                 'User-Agent': 'MiSub-SourceProbe/1.0'
             }
-        });
+        }, PROBE_TIMEOUT_MS, fetchImpl);
 
         const contentType = response.headers.get('content-type') || '';
         const proxyAuthenticate = response.headers.get('proxy-authenticate');
@@ -184,8 +185,8 @@ async function probeSource(source) {
     }
 }
 
-export async function probeSourceItem(item) {
-    return await probeSource(normalizeSourceItem(item));
+export async function probeSourceItem(item, options = {}) {
+    return await probeSource(normalizeSourceItem(item), options);
 }
 
 export async function probeSourceItems(items, options = {}) {
@@ -200,7 +201,7 @@ export async function probeSourceItems(items, options = {}) {
         while (true) {
             const index = cursor++;
             if (index >= sources.length) return;
-            results[index] = await probeSourceItem(sources[index]);
+            results[index] = await probeSourceItem(sources[index], options);
         }
     });
 
@@ -208,7 +209,7 @@ export async function probeSourceItems(items, options = {}) {
     return results;
 }
 
-export async function enrichSourcesWithProbeMetadata(items, previousItems = []) {
+export async function enrichSourcesWithProbeMetadata(items, previousItems = [], options = {}) {
     const previousById = new Map(
         (Array.isArray(previousItems) ? previousItems : []).map(item => [item?.id, item])
     );
@@ -223,7 +224,7 @@ export async function enrichSourcesWithProbeMetadata(items, previousItems = []) 
             continue;
         }
 
-        results.push(await probeSourceItem(normalized));
+        results.push(await probeSourceItem(normalized, options));
     }
 
     return results;
