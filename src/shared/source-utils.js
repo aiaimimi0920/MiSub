@@ -283,6 +283,20 @@ export function isEchWorkerSource(item) {
 
 export function getSourceKey(item) {
     const normalized = normalizeSourceItem(item);
+    if (normalized.kind === SOURCE_KIND_CONNECTOR) {
+        const connectorOptions = {
+            connector_type: normalized.connector_type || '',
+            connector_config: normalized.connector_config && typeof normalized.connector_config === 'object'
+                ? Object.keys(normalized.connector_config)
+                    .sort()
+                    .reduce((acc, key) => {
+                        acc[key] = normalized.connector_config[key];
+                        return acc;
+                    }, {})
+                : {}
+        };
+        return `${normalized.kind}:${normalized.input}:${JSON.stringify(connectorOptions)}`;
+    }
     return `${normalized.kind}:${normalized.input}`;
 }
 
