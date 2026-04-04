@@ -222,7 +222,7 @@ wrangler d1 execute misub --file=schema.sql --remote
 
 ### 5. Manifest 机器接口
 
-用于 `EasyProxiesV2` 等机器消费者的正式接口：
+用于 `EasyProxy` 等机器消费者的正式接口：
 
 - `GET /api/manifest/:profileId`
 
