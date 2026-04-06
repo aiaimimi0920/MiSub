@@ -38,8 +38,9 @@ const env = {
 };
 
 function getRequestUrl(req) {
-    const proto = req.headers['x-forwarded-proto'] || 'http';
-    const hostHeader = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+    const trustProxy = (process.env.TRUST_PROXY || '').toLowerCase() === 'true';
+    const proto = trustProxy ? (req.headers['x-forwarded-proto'] || 'http') : 'http';
+    const hostHeader = trustProxy ? (req.headers['x-forwarded-host'] || req.headers.host || 'localhost') : (req.headers.host || 'localhost');
     return `${proto}://${hostHeader}${req.url || '/'}`;
 }
 

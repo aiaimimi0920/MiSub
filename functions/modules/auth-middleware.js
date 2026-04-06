@@ -258,6 +258,25 @@ export async function authMiddleware(request, env) {
     }
 }
 
+// Simple in-memory rate limiter for login attempts (per IP, 5 attempts/minute)
+const _loginAttempts = new Map();
+const LOGIN_RATE_LIMIT = 5;
+const LOGIN_RATE_WINDOW_MS = 60_000;
+
+function checkLoginRateLimit(ip) {
+    const now = Date.now();
+    const record = _loginAttempts.get(ip);
+    if (!record || now - record.windowStart > LOGIN_RATE_WINDOW_MS) {
+        _loginAttempts.set(ip, { windowStart: now, count: 1 });
+        return true;
+    }
+    record.count++;
+    if (record.count > LOGIN_RATE_LIMIT) {
+        return false;
+    }
+    return true;
+}
+
 /**
  * 处理用户登录
  * @param {Request} request - HTTP 请求对象
@@ -267,6 +286,17 @@ export async function authMiddleware(request, env) {
 export async function handleLogin(request, env) {
     if (request.method !== 'POST') {
         return new Response('Method Not Allowed', { status: 405 });
+    }
+
+    const clientIp = request.headers.get('CF-Connecting-IP')
+        || request.headers.get('X-Real-IP')
+        || request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
+        || 'unknown';
+    if (!checkLoginRateLimit(clientIp)) {
+        return new Response(JSON.stringify({ error: '登录尝试过于频繁，请稍后再试' }), {
+            status: 429,
+            headers: { 'Content-Type': 'application/json', 'Retry-After': '60' }
+        });
     }
 
     const logMeta = buildRequestMeta(request, env);

@@ -428,8 +428,8 @@ export async function handleUpdatePassword(request, env) {
     try {
         const { password } = await request.json();
 
-        if (!password || typeof password !== 'string' || password.length < 6) {
-            return createErrorResponse('密码必须至少6位字符', 400);
+        if (!password || typeof password !== 'string' || password.length < 8) {
+            return createErrorResponse('密码必须至少8位字符', 400);
         }
 
         await setAdminPassword(env, password);

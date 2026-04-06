@@ -97,9 +97,9 @@ export async function handleDebugSubscriptionRequest(request, env) {
             fullResult: nodeResult
         });
     } catch (e) {
+        console.error('[Debug] 调试失败:', e.stack || e.message);
         return createJsonResponse({
-            error: `调试失败: ${e.message}`,
-            stack: e.stack
+            error: `调试失败: ${e.message}`
         }, 500);
     }
 }
@@ -323,7 +323,7 @@ export async function handlePreviewContentRequest(request, env) {
         const response = await fetch(new Request(url, {
             headers: { 'User-Agent': userAgent },
             redirect: "follow"
-        }), { cf: { insecureSkipVerify: true } });
+        }));
 
         if (!response.ok) {
             return createJsonResponse({

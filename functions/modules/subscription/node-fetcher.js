@@ -20,7 +20,7 @@ import {
  */
 export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, customUserAgent = null, debug = false, excludeRules = '', fetchProxy = null, skipCertVerify = false, plusAsSpace = false) {
     // 自动检测调试 Token
-    const shouldDebug = debug || (url && url.includes('b0b422857bb46aba65da8234c84f38c6'));
+    const shouldDebug = debug;
 
     try {
         const effectiveUserAgent = customUserAgent && customUserAgent.trim() !== ''

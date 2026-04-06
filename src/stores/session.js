@@ -72,7 +72,7 @@ export const useSessionStore = defineStore('session', () => {
 
   async function logout() {
     try {
-      await api.get('/api/logout');
+      await api.post('/api/logout');
     } catch (error) {
       console.warn('Logout request failed:', error);
     }

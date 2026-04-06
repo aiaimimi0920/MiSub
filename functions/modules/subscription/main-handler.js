@@ -252,7 +252,8 @@ export async function handleMisubRequest(context) {
 
     // 定义刷新函数（用于后台刷新）
     const refreshNodes = async (isBackground = false) => {
-        const isDebugToken = (token === 'b0b422857bb46aba65da8234c84f38c6');
+        const debugToken = env?.DEBUG_TOKEN || '';
+        const isDebugToken = debugToken !== '' && token === debugToken;
         // 组合节点列表
         // 传递 context 对象以获取请求信息用于日志记录
         context.startTime = Date.now();

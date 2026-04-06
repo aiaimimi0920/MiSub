@@ -146,6 +146,10 @@ export async function handleBatchSourceProbeRequest(request) {
         return createJsonResponse({ success: false, error: 'Missing sources input' }, 400);
     }
 
+    if (sources.length > 50) {
+        return createJsonResponse({ success: false, error: 'Batch size too large (max 50)' }, 400);
+    }
+
     const probedSources = await probeSourceItems(sources);
     return createJsonResponse({
         success: true,

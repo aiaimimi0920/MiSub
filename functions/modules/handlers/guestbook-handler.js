@@ -202,7 +202,12 @@ export async function handleGuestbookManageAction(request, env) {
             }
         } else if (action === 'status') {
             // 只更新状态，例如改为 'pending' or 'approved'
-            if (body.status) updatedMessage.status = body.status;
+            const validStatuses = ['pending', 'approved', 'replied'];
+            if (body.status && validStatuses.includes(body.status)) {
+                updatedMessage.status = body.status;
+            } else {
+                return createErrorResponse(`无效状态，有效值: ${validStatuses.join(', ')}`, 400);
+            }
         } else {
             return createErrorResponse('未知操作', 400);
         }

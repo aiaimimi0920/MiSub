@@ -192,7 +192,11 @@ export async function handleApiRequest(request, env) {
         return await handleLogout(request);
     }
 
-    // 认证调试端点（公开，不返回敏感值）
+    if (!await authMiddleware(request, env)) {
+        return createJsonResponse({ error: 'Unauthorized' }, 401);
+    }
+
+    // 认证调试端点（需登录）
     if (path === '/auth_debug') {
         const debugInfo = await getAuthDebugInfo(env);
         const authDiagnostic = await getAuthSessionDiagnostic(request, env);
@@ -204,7 +208,7 @@ export async function handleApiRequest(request, env) {
         });
     }
 
-    // 登录密码调试端点（公开，不返回敏感值）
+    // 登录密码调试端点（需登录）
     if (path === '/auth_check') {
         if (request.method !== 'POST') {
             return createJsonResponse({ error: 'Method Not Allowed' }, 405);
@@ -213,26 +217,16 @@ export async function handleApiRequest(request, env) {
         return createJsonResponse(diagnostic, diagnostic.success ? 200 : 400);
     }
 
-    if (!await authMiddleware(request, env)) {
-        return createJsonResponse({ error: 'Unauthorized' }, 401);
-    }
-
     // Auth-only route for client management (POST, DELETE, etc.)
     if (path.startsWith('/clients')) {
         return await handleClientRequest(request, env);
     }
 
     if (path === '/test_notification') {
-        if (!await authMiddleware(request, env)) {
-            return createJsonResponse({ error: 'Unauthorized' }, 401);
-        }
         return await handleTestNotificationRequest(request, env);
     }
 
     if (path === '/test_subconverter') {
-        if (!await authMiddleware(request, env)) {
-            return createJsonResponse({ error: 'Unauthorized' }, 401);
-        }
         return await handleTestSubconverterRequest(request, env);
     }
 
@@ -416,7 +410,7 @@ async function handleExternalFetchRequest(request, env) {
         return createErrorResponse('Invalid JSON format', 400);
     }
 
-    const { url: externalUrl, timeout = 15000 } = requestData;
+    const { url: externalUrl, timeout: rawTimeout = 15000 } = requestData;
 
     if (!externalUrl || typeof externalUrl !== 'string' || !/^https?:\/\/.+/.test(externalUrl)) {
         return createErrorResponse('Invalid or missing URL parameter. Must be a valid HTTP/HTTPS URL.', 400);
@@ -427,6 +421,19 @@ async function handleExternalFetchRequest(request, env) {
         return createErrorResponse('URL too long (max 2048 characters)', 400);
     }
 
+    // 阻止对内网地址的请求 (SSRF 防护)
+    try {
+        const parsedUrl = new URL(externalUrl);
+        const hostname = parsedUrl.hostname;
+        if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.|localhost$|::1$|\[::1\])/i.test(hostname)) {
+            return createErrorResponse('Requests to private/internal addresses are not allowed', 403);
+        }
+    } catch {
+        return createErrorResponse('Invalid URL', 400);
+    }
+
+    // 钳制超时范围
+    const timeout = Math.max(1000, Math.min(Number(rawTimeout) || 15000, 30000));
 
     try {
         // 创建带超时的请求

@@ -2577,7 +2577,11 @@ export async function handleTelegramWebhook(request, env) {
         }
 
         // 验证请求来源
-        if (config.webhook_secret && !verifyTelegramRequest(request, config)) {
+        if (!config.webhook_secret) {
+            console.warn('[Telegram Push] webhook_secret not configured, rejecting request');
+            return createJsonResponse({ error: 'webhook_secret not configured' }, 403);
+        }
+        if (!verifyTelegramRequest(request, config)) {
             console.error('[Telegram Push] Invalid webhook secret');
             return createJsonResponse({ error: 'Unauthorized' }, 401);
         }
