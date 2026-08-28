@@ -12,7 +12,7 @@
 
 ```bash
 # 创建 D1 数据库
-wrangler d1 create misub
+npx wrangler d1 create misub
 ```
 
 命令执行后，您会看到类似以下的输出：
@@ -26,38 +26,39 @@ database_name = "misub"
 database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
-### 2. 更新 wrangler.toml 配置
+### 2. 生成部署时配置
 
-将上一步输出的数据库 ID 复制到 `wrangler.toml` 文件中：
+独立部署时，将上一步输出的数据库 ID 写入私有的部署时 Wrangler 配置：
 
 ```toml
 [[d1_databases]]
 binding = "MISUB_DB"
 database_name = "misub"
 database_id = "your-actual-database-id-here"  # 替换为实际的数据库 ID
-preview_database_id = "your-actual-database-id-here"  # 同样替换为实际的数据库 ID
 ```
+
+EasyProxy 根仓库用户不应修改并提交 MiSub 的 `wrangler.jsonc`。根生命周期工具会
+根据 `topology.yaml` 发现数据库，并在临时目录生成包含精确 ID 的部署配置。
 
 ### 3. 初始化数据库表结构
 
 ```bash
-# 执行数据库初始化脚本
-wrangler d1 execute misub --file=schema.sql
+# 查看待执行迁移
+npx wrangler d1 migrations list misub --remote
+
+# 以 expand-only 方式升级或初始化数据库
+npx wrangler d1 migrations apply misub --remote
 ```
 
-**如果您已经创建过数据库但遇到表结构问题，请执行修复脚本：**
-
-```bash
-# 修复现有数据库表结构
-wrangler d1 execute misub --file=fix_d1_schema.sql
-```
+`schema.sql` 只用于构建全新数据库；已有数据库必须使用 `migrations/`。不要编辑
+已经应用的 migration，也不要用新的空数据库绕过迁移失败。
 
 ### 4. 部署应用
 
 ```bash
 # 构建并部署
 npm run build
-wrangler pages deploy
+npx wrangler pages deploy
 ```
 
 ## 🔧 使用方法
@@ -77,13 +78,16 @@ wrangler pages deploy
 2. 点击"🚀 迁移数据到 D1 数据库"按钮
 3. 确认迁移操作
 4. 等待迁移完成
-5. 系统会自动将存储类型切换为"D1 数据库"
+5. 系统会逐项读回验证后，将 D1 中的设置标记为 `storageType=d1`
+
+该操作可以重复执行。目标 D1 已存在相同数据时只验证；若存在不同数据则停止，
+不会覆盖目标数据，也不会删除 KV 原数据。
 
 ## 📊 存储类型对比
 
 | 特性 | KV 存储 | D1 数据库 |
 |------|---------|-----------|
-| 写入限制 | 有限制 | 无限制 |
+| 写入配额 | KV 配额 | D1 配额 |
 | 查询速度 | 极快 | 快 |
 | 数据结构 | 键值对 | 关系型 |
 | 成本 | 较低 | 中等 |
@@ -94,7 +98,8 @@ wrangler pages deploy
 1. **数据迁移是单向的**：从 KV 迁移到 D1 后，建议不要再切换回 KV
 2. **性能差异**：D1 查询可能比 KV 稍慢，但写入无限制
 3. **成本考虑**：D1 有不同的计费模式，请查看 Cloudflare 定价
-4. **备份建议**：迁移前建议备份重要数据
+4. **备份要求**：迁移前必须创建完整加密备份并在临时 D1 中完成恢复演练
+5. **禁止静默切换**：选定后端缺少绑定时请求会失败，不会切换到另一套空数据
 
 ## 🔍 故障排除
 
@@ -104,19 +109,13 @@ wrangler pages deploy
 A: 确保您已登录 Cloudflare 账户：`wrangler auth login`
 
 **Q: 部署后无法访问 D1 数据库**
-A: 检查 `wrangler.toml` 中的数据库 ID 是否正确
+A: 检查部署时 Wrangler 配置中的数据库名称、ID 和 `MISUB_DB` binding 是否一致
 
 **Q: 迁移失败**
 A: 检查 D1 数据库是否正确配置，并查看浏览器控制台的错误信息
 
-**Q: 切换存储类型后数据丢失**
-A: 不同存储类型的数据是独立的，切换前请先进行数据迁移
-
-**Q: 数据迁移时出现 "table settings has no column named id" 错误**
-A: 这是数据库表结构问题，请执行修复脚本：
-```bash
-wrangler d1 execute misub --file=fix_d1_schema.sql
-```
+**Q: 切换存储类型后请求失败**
+A: 这是 fail-closed 保护。先绑定目标存储并执行可验证迁移，不要创建空数据库替代。
 
 **Q: 保存设置时提示 "保存设置失败"**
 A: 这通常是因为 KV 写入限制或存储类型配置问题：
@@ -130,10 +129,10 @@ A: 这通常是因为 KV 写入限制或存储类型配置问题：
 
 ```bash
 # 列出所有 D1 数据库
-wrangler d1 list
+npx wrangler d1 list --json
 
-# 查询数据库表
-wrangler d1 execute misub --command="SELECT name FROM sqlite_master WHERE type='table';"
+# 查询迁移、业务表和 Cron 扩展表
+npx wrangler d1 execute misub --remote --command="SELECT migration_id,name FROM schema_migrations ORDER BY migration_id; SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
 ```
 
 ## 📞 支持

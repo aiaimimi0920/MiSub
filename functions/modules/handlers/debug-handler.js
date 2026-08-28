@@ -8,11 +8,7 @@ import { createJsonResponse, createErrorResponse } from '../utils.js';
 import { handleSubscriptionNodesRequest } from '../subscription-handler.js';
 import { debugTgNotification } from '../../services/notification-service.js';
 import { parseNodeList, calculateProtocolStats, calculateRegionStats } from '../utils/node-parser.js';
-import {
-    isProxyURISource,
-    isSubscriptionSource,
-    normalizeSourceCollection
-} from '../../../src/shared/source-utils.js';
+import { buildLogicalBackup } from '../backup-service.js';
 
 /**
  * 调试订阅信息和节点内容
@@ -253,35 +249,18 @@ export async function handleExportDataRequest(request, env) {
     }
 
     try {
-        const requestData = await request.json();
-        const { includeSubscriptions = true, includeProfiles = true, includeSettings = false } = requestData;
-
-        const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
-        const exportData = {
-            exportInfo: {
-                timestamp: new Date().toISOString(),
-                version: '2.0.0',
-                storageType: await StorageFactory.getStorageType(env)
-            },
-            data: {}
-        };
-
-        if (includeSubscriptions) {
-            const sources = normalizeSourceCollection(await storageAdapter.get('misub_subscriptions_v1') || []);
-            exportData.data.subscriptions = sources.filter(source => isSubscriptionSource(source));
-            exportData.data.manualNodes = sources.filter(source => isProxyURISource(source));
-        }
-
-        if (includeProfiles) {
-            const profiles = await storageAdapter.get('misub_profiles_v1') || [];
-            exportData.data.profiles = profiles;
-        }
-
-        if (includeSettings) {
-            const settings = await storageAdapter.get('misub_settings_v1') || {};
-            exportData.data.settings = settings;
-        }
-
+        await request.json();
+        const storageType = await StorageFactory.getStorageType(env);
+        const storageAdapter = StorageFactory.createAdapter(env, storageType);
+        const exportData = await buildLogicalBackup({
+            storageAdapter,
+            storageType,
+            resourceIdentity: {
+                deploymentName: env.EASYPROXY_DEPLOYMENT_NAME,
+                pagesProject: env.CF_PAGES_PROJECT_NAME,
+                d1DatabaseId: env.EASYPROXY_MISUB_D1_DATABASE_ID
+            }
+        });
         const exportSize = JSON.stringify(exportData).length;
 
         return createJsonResponse({
@@ -289,11 +268,9 @@ export async function handleExportDataRequest(request, env) {
             exportData,
             metadata: {
                 size: exportSize,
-                subscriptionsCount: exportData.data.subscriptions?.length || 0,
-                profilesCount: exportData.data.profiles?.length || 0,
-                settingsCount: Object.keys(exportData.data.settings || {}).length
+                ...exportData.counts
             }
-        });
+        }, 200, { 'Cache-Control': 'no-store' });
     } catch (e) {
         return createErrorResponse(`数据导出失败: ${e.message}`, 500);
     }

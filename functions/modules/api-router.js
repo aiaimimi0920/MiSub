@@ -3,7 +3,7 @@
  * 处理所有API请求的路由分发
  */
 
-import { StorageFactory, DataMigrator } from '../storage-adapter.js';
+import { DATA_KEYS, StorageFactory, DataMigrator } from '../storage-adapter.js';
 import { createJsonResponse, createErrorResponse, getAuthDebugInfo } from './utils.js';
 import { authMiddleware, handleLogin, handleLogout, getAuthSessionDiagnostic, getLoginPasswordDiagnostic } from './auth-middleware.js';
 import { handleDataRequest, handleMisubsSave, handleSettingsGet, handleSettingsSave, handlePublicProfilesRequest, handlePublicConfig, handleUpdatePassword } from './api-handler.js';
@@ -562,13 +562,7 @@ async function handleCronStatusRequest(env) {
 
         let lastExecution = null;
         try {
-            const kv = StorageFactory.resolveKV(env);
-            if (kv) {
-                const statusData = await kv.get('cron_last_execution');
-                if (statusData) {
-                    lastExecution = JSON.parse(statusData);
-                }
-            }
+            lastExecution = await storageAdapter.get(DATA_KEYS.CRON_LAST_EXECUTION);
         } catch (error) {
             console.warn('[Cron Status] Failed to fetch last execution:', error);
         }

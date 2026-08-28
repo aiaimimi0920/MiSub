@@ -1,4 +1,3 @@
--- New-database snapshot. Production upgrades use migrations/*.sql.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     migration_id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
@@ -12,14 +11,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-
 CREATE TABLE IF NOT EXISTS profiles (
     id TEXT PRIMARY KEY,
     data TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -28,17 +25,9 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS cron_executions (
-    id TEXT PRIMARY KEY,
-    data TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE INDEX IF NOT EXISTS idx_subscriptions_updated_at ON subscriptions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_profiles_updated_at ON profiles(updated_at);
 CREATE INDEX IF NOT EXISTS idx_settings_updated_at ON settings(updated_at);
-CREATE INDEX IF NOT EXISTS idx_cron_executions_updated_at ON cron_executions(updated_at);
 
-INSERT OR IGNORE INTO schema_migrations (migration_id, name) VALUES (1, '0001_initial');
-INSERT OR IGNORE INTO schema_migrations (migration_id, name) VALUES (2, '0002_cron_executions');
+INSERT OR IGNORE INTO schema_migrations (migration_id, name)
+VALUES (1, '0001_initial');

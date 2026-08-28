@@ -4,6 +4,7 @@
  */
 
 import { formatBytes } from './utils.js';
+import { DATA_KEYS } from '../storage-adapter.js';
 import { KV_KEY_SUBS, KV_KEY_SETTINGS, DEFAULT_SETTINGS, SYSTEM_CONSTANTS } from './config.js';
 import { isSubscriptionSource, normalizeSourceCollection } from '../../src/shared/source-utils.js';
 
@@ -393,17 +394,12 @@ hasNodeCountUpdate = true;
     console.info(`[Cron] Completed in ${duration}ms:`, summary.summary);
 
     try {
-        const kv = StorageFactory.resolveKV(env);
-        if (kv) {
-            const executionStatus = {
-                type: triggerType,
-                timestamp: new Date().toISOString(),
-                result: summary.summary
-            };
-            await kv.put('cron_last_execution', JSON.stringify(executionStatus), {
-                expirationTtl: 86400
-            });
-        }
+        const executionStatus = {
+            type: triggerType,
+            timestamp: new Date().toISOString(),
+            result: summary.summary
+        };
+        await storageAdapter.put(DATA_KEYS.CRON_LAST_EXECUTION, executionStatus);
     } catch (statusError) {
         console.warn('[Cron] Failed to persist execution status:', statusError);
     }

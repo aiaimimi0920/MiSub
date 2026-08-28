@@ -16,10 +16,11 @@ function normalizeStorageType(value) {
 }
 
 // 数据键映射
-const DATA_KEYS = {
+export const DATA_KEYS = {
     SUBSCRIPTIONS: 'misub_subscriptions_v1',
     PROFILES: 'misub_profiles_v1',
-    SETTINGS: 'worker_settings_v1'
+    SETTINGS: 'worker_settings_v1',
+    CRON_LAST_EXECUTION: 'cron_last_execution'
 };
 
 /**
@@ -88,10 +89,10 @@ class D1StorageAdapter {
     async get(key, type = 'json') {
         try {
             // 根据 key 确定查询的表和字段
-            const { table, queryField, queryValue } = this._parseKey(key);
+            const { table, queryField, queryValue, dataField } = this._parseKey(key);
 
             const result = await this.db.prepare(
-                `SELECT ${table === 'settings' ? 'value as data' : 'data'} FROM ${table} WHERE ${queryField} = ?`
+                `SELECT ${dataField} as data FROM ${table} WHERE ${queryField} = ?`
             ).bind(queryValue).first();
 
             if (!result) return null;
@@ -102,8 +103,7 @@ class D1StorageAdapter {
             if (error.message && error.message.includes('no such table')) {
                 return null;
             }
-            console.error(`[D1] Failed to get key ${key}:`, error);
-            return null;
+            throw new Error(`[D1] Failed to get key ${key}: ${error.message}`, { cause: error });
         }
     }
 
@@ -119,7 +119,6 @@ class D1StorageAdapter {
                     VALUES (?, ?, CURRENT_TIMESTAMP)
                 `).bind(queryValue, data).run();
             } else {
-                // subscriptions 和 profiles 表使用 id-data 结构
                 await this.db.prepare(`
                     INSERT OR REPLACE INTO ${table} (id, data, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
@@ -154,7 +153,8 @@ class D1StorageAdapter {
             const tables = [
                 { name: 'subscriptions', keyField: 'id' },
                 { name: 'profiles', keyField: 'id' },
-                { name: 'settings', keyField: 'key' }
+                { name: 'settings', keyField: 'key' },
+                { name: 'cron_executions', keyField: 'id' }
             ];
             const keys = [];
             const effectivePrefix = prefix || '';
@@ -162,18 +162,22 @@ class D1StorageAdapter {
                 DATA_KEYS.SUBSCRIPTIONS.startsWith(effectivePrefix) ||
                 DATA_KEYS.PROFILES.startsWith(effectivePrefix) ||
                 DATA_KEYS.SETTINGS.startsWith(effectivePrefix) ||
+                DATA_KEYS.CRON_LAST_EXECUTION.startsWith(effectivePrefix) ||
                 effectivePrefix.startsWith(DATA_KEYS.SUBSCRIPTIONS) ||
                 effectivePrefix.startsWith(DATA_KEYS.PROFILES) ||
-                effectivePrefix.startsWith(DATA_KEYS.SETTINGS);
+                effectivePrefix.startsWith(DATA_KEYS.SETTINGS) ||
+                effectivePrefix.startsWith(DATA_KEYS.CRON_LAST_EXECUTION);
 
             const shouldQuerySubscriptions = !effectivePrefix || effectivePrefix.startsWith(DATA_KEYS.SUBSCRIPTIONS);
             const shouldQueryProfiles = !effectivePrefix || effectivePrefix.startsWith(DATA_KEYS.PROFILES);
             const shouldQuerySettings = !effectivePrefix || !matchesKnownKey || effectivePrefix.startsWith(DATA_KEYS.SETTINGS);
+            const shouldQueryCron = !effectivePrefix || effectivePrefix.startsWith(DATA_KEYS.CRON_LAST_EXECUTION);
 
             for (const table of tables) {
                 if (table.name === 'subscriptions' && !shouldQuerySubscriptions) continue;
                 if (table.name === 'profiles' && !shouldQueryProfiles) continue;
                 if (table.name === 'settings' && !shouldQuerySettings) continue;
+                if (table.name === 'cron_executions' && !shouldQueryCron) continue;
 
                 let results;
                 if (table.name === 'settings' && effectivePrefix) {
@@ -206,15 +210,17 @@ class D1StorageAdapter {
      */
     _parseKey(key) {
         if (key === DATA_KEYS.SUBSCRIPTIONS) {
-            return { table: 'subscriptions', queryField: 'id', queryValue: 'main' };
+            return { table: 'subscriptions', queryField: 'id', queryValue: 'main', dataField: 'data' };
         } else if (key === DATA_KEYS.PROFILES) {
-            return { table: 'profiles', queryField: 'id', queryValue: 'main' };
+            return { table: 'profiles', queryField: 'id', queryValue: 'main', dataField: 'data' };
         } else if (key === DATA_KEYS.SETTINGS) {
-            return { table: 'settings', queryField: 'key', queryValue: 'main' };
+            return { table: 'settings', queryField: 'key', queryValue: 'main', dataField: 'value' };
+        } else if (key === DATA_KEYS.CRON_LAST_EXECUTION) {
+            return { table: 'cron_executions', queryField: 'id', queryValue: 'last', dataField: 'data' };
         } else {
             // 处理其他格式的 key，默认作为 settings 表的 key，但记录警告
             console.warn(`[D1 Storage] Unknown key format: ${key}, treating as settings key`);
-            return { table: 'settings', queryField: 'key', queryValue: key };
+            return { table: 'settings', queryField: 'key', queryValue: key, dataField: 'value' };
         }
     }
 
@@ -228,22 +234,13 @@ class D1StorageAdapter {
             return DATA_KEYS.PROFILES;
         } else if (table === 'settings' && keyValue === 'main') {
             return DATA_KEYS.SETTINGS;
+        } else if (table === 'cron_executions' && keyValue === 'last') {
+            return DATA_KEYS.CRON_LAST_EXECUTION;
         } else {
             return keyValue;
         }
     }
 }
-
-/**
- * 无存储降级适配器（EdgeOne 纯环境变量模式，不读写持久数据）
- */
-class NoopStorageAdapter {
-    async get() { return null; }
-    async put() { throw new Error('storage is unavailable'); }
-    async delete() { throw new Error('storage is unavailable'); }
-    async list() { return []; }
-}
-
 
 /**
  * 判断一个值是否像 KV namespace（有 get/put/delete 方法）
@@ -378,13 +375,7 @@ export class StorageFactory {
         switch (resolvedStorageType) {
             case STORAGE_TYPES.D1:
                 if (!env.MISUB_DB) {
-                    console.warn('[Storage] D1 database not available, falling back to KV');
-                    const kvFallback = StorageFactory.resolveKV(env);
-                    if (!kvFallback) {
-                        console.warn('[Storage] KV not available either, using noop adapter');
-                        return new NoopStorageAdapter();
-                    }
-                    return new KVStorageAdapter(kvFallback);
+                    throw new Error('D1 storage was selected but MISUB_DB is not bound');
                 }
                 return new D1StorageAdapter(env.MISUB_DB);
 
@@ -394,14 +385,7 @@ export class StorageFactory {
                 if (kv) {
                     return new KVStorageAdapter(kv);
                 }
-
-                if (env.MISUB_DB) {
-                    console.warn('[Storage] KV binding not available, falling back to D1');
-                    return new D1StorageAdapter(env.MISUB_DB);
-                }
-
-                console.warn('[Storage] No KV or D1 binding found, using noop adapter');
-                return new NoopStorageAdapter();
+                throw new Error('KV storage was selected but MISUB_KV is not bound');
             }
         }
     }
@@ -458,58 +442,37 @@ export class DataMigrator {
      * @returns {Promise<Object>} 迁移结果
      */
     static async migrateKVToD1(env) {
-        try {
-            const kvNs = resolveKV(env);
-            if (!kvNs) throw new Error('No KV binding found');
-            const kvAdapter = new KVStorageAdapter(kvNs);
-            const d1Adapter = new D1StorageAdapter(env.MISUB_DB);
+        const kvNs = resolveKV(env);
+        if (!kvNs) throw new Error('No KV binding found');
+        if (!env.MISUB_DB) throw new Error('No D1 binding found');
+        const source = new KVStorageAdapter(kvNs);
+        const target = new D1StorageAdapter(env.MISUB_DB);
+        const results = { subscriptions: 'absent', profiles: 'absent', settings: 'absent', errors: [] };
+        const entries = [
+            ['subscriptions', DATA_KEYS.SUBSCRIPTIONS, value => value],
+            ['profiles', DATA_KEYS.PROFILES, value => value],
+            ['settings', DATA_KEYS.SETTINGS, value => ({ ...value, storageType: STORAGE_TYPES.D1 })]
+        ];
 
-            const results = {
-                subscriptions: false,
-                profiles: false,
-                settings: false,
-                errors: []
-            };
-
-            // 迁移订阅数据
+        for (const [label, key, transform] of entries) {
             try {
-                const subscriptions = await kvAdapter.get(DATA_KEYS.SUBSCRIPTIONS);
-                if (subscriptions) {
-                    await d1Adapter.put(DATA_KEYS.SUBSCRIPTIONS, subscriptions);
-                    results.subscriptions = true;
+                const sourceValue = await source.get(key);
+                if (sourceValue === null) continue;
+                const expected = transform(sourceValue);
+                const current = await target.get(key);
+                if (current !== null && JSON.stringify(current) !== JSON.stringify(expected)) {
+                    throw new Error('target contains different data');
                 }
-            } catch (error) {
-                results.errors.push(`订阅数据迁移失败: ${error.message}`);
-            }
-
-            // 迁移配置文件
-            try {
-                const profiles = await kvAdapter.get(DATA_KEYS.PROFILES);
-                if (profiles) {
-                    await d1Adapter.put(DATA_KEYS.PROFILES, profiles);
-                    results.profiles = true;
+                if (current === null) await target.put(key, expected);
+                const verified = await target.get(key);
+                if (JSON.stringify(verified) !== JSON.stringify(expected)) {
+                    throw new Error('read-after-write verification failed');
                 }
+                results[label] = current === null ? 'migrated' : 'verified';
             } catch (error) {
-                results.errors.push(`配置文件迁移失败: ${error.message}`);
+                results.errors.push(`${label}: ${error.message}`);
             }
-
-            // 迁移设置
-            try {
-                const settings = await kvAdapter.get(DATA_KEYS.SETTINGS);
-                if (settings) {
-                    // 更新存储类型为 D1
-                    settings.storageType = STORAGE_TYPES.D1;
-                    await d1Adapter.put(DATA_KEYS.SETTINGS, settings);
-                    results.settings = true;
-                }
-            } catch (error) {
-                results.errors.push(`设置迁移失败: ${error.message}`);
-            }
-
-            return results;
-        } catch (error) {
-            console.error('[Migration] Failed to migrate KV to D1:', error);
-            throw error;
         }
+        return results;
     }
 }
