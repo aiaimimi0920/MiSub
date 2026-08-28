@@ -52,6 +52,12 @@ describe('syncAggregatorArtifacts', () => {
                 });
             }
 
+            if (url === 'https://sub.aiaimimi.com/subs/clash.yaml') {
+                return createTextResponse('proxies:\n  - { name: stable, type: ss, server: stable.example.com, port: 443, cipher: aes-128-gcm, password: test }', {
+                    contentType: 'text/yaml; charset=utf-8'
+                });
+            }
+
             throw new Error(`Unexpected fetch URL in test: ${url}`);
         });
 
@@ -107,7 +113,7 @@ describe('syncAggregatorArtifacts', () => {
             fetchImpl: fetchMock
         });
 
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock).toHaveBeenCalledTimes(3);
         expect(result.summary).toMatchObject({
             status: 'success',
             totalRemote: 2,
@@ -154,6 +160,7 @@ describe('syncAggregatorArtifacts', () => {
             visibility: 'public_default'
         });
         expect(stableSource.id).toBe('sub_aggregator_stable');
+        expect(stableSource.probe_status).toBe('verified');
 
         expect(result.profiles).toContainEqual(expect.objectContaining({
             id: 'aggregator_global',
@@ -173,5 +180,201 @@ describe('syncAggregatorArtifacts', () => {
             lastDiscoveryInconclusiveCount: 0,
             lastDiscoverySkippedCount: 0
         });
+    });
+
+    it('adds explicitly configured connector ids into the managed public profile', async () => {
+        const fetchMock = vi.fn(async (input) => {
+            const url = String(input);
+            if (url === 'https://sub.aiaimimi.com/internal/crawledsubs.json') {
+                return createJsonResponse({});
+            }
+            if (url === 'https://sub.aiaimimi.com/subs/clash.yaml') {
+                return createTextResponse('proxies:\n  - { name: stable, type: ss, server: stable.example.com, port: 443, cipher: aes-128-gcm, password: test }', {
+                    contentType: 'text/yaml; charset=utf-8'
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        });
+
+        const result = await syncAggregatorArtifacts({
+            sources: [
+                {
+                    id: 'conn_ech_workers_pref_1',
+                    kind: 'connector',
+                    name: 'ECH Worker Preferred 1',
+                    enabled: true,
+                    input: 'https://proxyservice-ech-workers.vmjcv666.workers.dev:443',
+                    connector_type: 'ech_worker',
+                    connector_config: {
+                        access_token: 'token-1'
+                    }
+                },
+                {
+                    id: 'conn_ech_workers_pref_2',
+                    kind: 'connector',
+                    name: 'ECH Worker Preferred 2',
+                    enabled: true,
+                    input: 'https://proxyservice-ech-workers.vmjcv666.workers.dev:443',
+                    connector_type: 'ech_worker',
+                    connector_config: {
+                        access_token: 'token-2',
+                        server_ip: '198.41.132.114'
+                    }
+                }
+            ],
+            profiles: [],
+            settings: {
+                aggregatorSync: {
+                    enabled: true,
+                    stableSourceEnabled: true,
+                    defaultPublicProfileEnabled: true,
+                    defaultPublicProfileConnectorIds: [
+                        'conn_ech_workers_pref_1',
+                        'conn_ech_workers_pref_2',
+                        'conn_ech_workers_pref_1'
+                    ]
+                }
+            },
+            fetchImpl: fetchMock
+        });
+
+        const managedProfile = result.profiles.find(item => item.id === 'aggregator_global');
+        expect(managedProfile).toBeTruthy();
+        expect(managedProfile.subscriptions).toEqual(['sub_aggregator_stable']);
+        expect(managedProfile.manualNodes).toEqual([
+            'conn_ech_workers_pref_1',
+            'conn_ech_workers_pref_2'
+        ]);
+    });
+
+    it('preserves existing connector selections when no explicit connector ids are configured', async () => {
+        const fetchMock = vi.fn(async (input) => {
+            const url = String(input);
+            if (url === 'https://sub.aiaimimi.com/internal/crawledsubs.json') {
+                return createJsonResponse({});
+            }
+            if (url === 'https://sub.aiaimimi.com/subs/clash.yaml') {
+                return createTextResponse('proxies:\n  - { name: stable, type: ss, server: stable.example.com, port: 443, cipher: aes-128-gcm, password: test }', {
+                    contentType: 'text/yaml; charset=utf-8'
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        });
+
+        const result = await syncAggregatorArtifacts({
+            sources: [
+                {
+                    id: 'conn_ech_workers_pref_3',
+                    kind: 'connector',
+                    name: 'ECH Worker Preferred 3',
+                    enabled: true,
+                    input: 'https://proxyservice-ech-workers.vmjcv666.workers.dev:443',
+                    connector_type: 'ech_worker',
+                    connector_config: {
+                        access_token: 'token-3'
+                    }
+                },
+                {
+                    id: 'user-direct-node',
+                    kind: 'proxy_uri',
+                    name: 'Direct Residential',
+                    enabled: true,
+                    input: 'http://user:pass@example.com:8080'
+                }
+            ],
+            profiles: [
+                {
+                    id: 'aggregator_global',
+                    customId: 'aggregator-global',
+                    name: 'Aggregator Global',
+                    enabled: true,
+                    subscriptions: ['sub_aggregator_stable'],
+                    manualNodes: ['conn_ech_workers_pref_3', 'user-direct-node'],
+                    isPublic: true
+                }
+            ],
+            settings: {
+                aggregatorSync: {
+                    enabled: true,
+                    stableSourceEnabled: true,
+                    defaultPublicProfileEnabled: true
+                }
+            },
+            fetchImpl: fetchMock
+        });
+
+        const managedProfile = result.profiles.find(item => item.id === 'aggregator_global');
+        expect(managedProfile.manualNodes).toEqual(['conn_ech_workers_pref_3']);
+    });
+
+    it('preserves runtime-managed proxy nodes while also appending configured connector ids', async () => {
+        const fetchMock = vi.fn(async (input) => {
+            const url = String(input);
+            if (url === 'https://sub.aiaimimi.com/internal/crawledsubs.json') {
+                return createJsonResponse({});
+            }
+            if (url === 'https://sub.aiaimimi.com/subs/clash.yaml') {
+                return createTextResponse('proxies:\n  - { name: stable, type: ss, server: stable.example.com, port: 443, cipher: aes-128-gcm, password: test }', {
+                    contentType: 'text/yaml; charset=utf-8'
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        });
+
+        const result = await syncAggregatorArtifacts({
+            sources: [
+                {
+                    id: 'proxy_runtime_node_1',
+                    kind: 'proxy_uri',
+                    name: 'Runtime Node 1',
+                    enabled: true,
+                    input: 'http://runtime-1.example.com:8080',
+                    options: {
+                        managed_by: 'easyproxy_runtime_sources',
+                        source_role: 'runtime_effective_proxy'
+                    }
+                },
+                {
+                    id: 'conn_zenproxy_primary',
+                    kind: 'connector',
+                    name: 'ZenProxy Primary',
+                    enabled: true,
+                    input: 'https://zenproxy.top',
+                    connector_type: 'zenproxy_client',
+                    connector_config: {
+                        api_key: 'demo-key'
+                    }
+                }
+            ],
+            profiles: [
+                {
+                    id: 'aggregator_global',
+                    customId: 'aggregator-global',
+                    name: 'Aggregator Global',
+                    enabled: true,
+                    subscriptions: ['sub_aggregator_stable'],
+                    manualNodes: ['proxy_runtime_node_1'],
+                    isPublic: true
+                }
+            ],
+            settings: {
+                aggregatorSync: {
+                    enabled: true,
+                    stableSourceEnabled: true,
+                    defaultPublicProfileEnabled: true,
+                    defaultPublicProfileConnectorIds: ['conn_zenproxy_primary']
+                }
+            },
+            fetchImpl: fetchMock
+        });
+
+        const managedProfile = result.profiles.find(item => item.id === 'aggregator_global');
+        expect(managedProfile.manualNodes).toEqual([
+            'proxy_runtime_node_1',
+            'conn_zenproxy_primary'
+        ]);
     });
 });

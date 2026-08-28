@@ -1,14 +1,37 @@
 import { SettingsCache } from '../storage-adapter.js';
 import { KV_KEY_SETTINGS, KV_KEY_SUBS, KV_KEY_PROFILES, DEFAULT_SETTINGS } from './config.js';
-import { normalizeSourceCollection, getSourceKey } from '../../src/shared/source-utils.js';
+import {
+    normalizeSourceCollection,
+    getSourceKey,
+    isConnectorSource
+} from '../../src/shared/source-utils.js';
 import { probeSourceItems } from './source-probe.js';
 
 const AGGREGATOR_DISCOVERY_MANAGED_BY = 'aggregator_sync';
 const AGGREGATOR_STABLE_MANAGED_BY = 'aggregator_stable';
 const AGGREGATOR_PUBLIC_PROFILE_MANAGED_BY = 'aggregator_public_profile';
+const EASYPROXY_RUNTIME_SOURCES_MANAGED_BY = 'easyproxy_runtime_sources';
 
 function normalizeString(value) {
     return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeStringArray(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const seen = new Set();
+    const normalized = [];
+    for (const entry of value) {
+        const id = normalizeString(entry);
+        if (!id || seen.has(id)) {
+            continue;
+        }
+        seen.add(id);
+        normalized.push(id);
+    }
+    return normalized;
 }
 
 function cloneObject(value, fallback = {}) {
@@ -48,6 +71,7 @@ function resolveAggregatorSyncSettings(settings = {}) {
     resolved.defaultPublicProfileCustomId = normalizeString(resolved.defaultPublicProfileCustomId) || DEFAULT_SETTINGS.aggregatorSync.defaultPublicProfileCustomId;
     resolved.defaultPublicProfileName = normalizeString(resolved.defaultPublicProfileName) || DEFAULT_SETTINGS.aggregatorSync.defaultPublicProfileName;
     resolved.defaultPublicProfileDescription = normalizeString(resolved.defaultPublicProfileDescription) || DEFAULT_SETTINGS.aggregatorSync.defaultPublicProfileDescription;
+    resolved.defaultPublicProfileConnectorIds = normalizeStringArray(resolved.defaultPublicProfileConnectorIds);
     resolved.enabled = resolved.enabled === true;
     resolved.runOnCron = resolved.runOnCron !== false;
     resolved.autoDisableMissing = resolved.autoDisableMissing !== false;
@@ -90,6 +114,10 @@ function isManagedStableSource(source) {
 
 function isManagedAggregatorSource(source) {
     return isManagedDiscoverySource(source) || isManagedStableSource(source);
+}
+
+function isManagedRuntimeProxySource(source) {
+    return source?.kind === 'proxy_uri' && source?.options?.managed_by === EASYPROXY_RUNTIME_SOURCES_MANAGED_BY;
 }
 
 function findManagedStableSourceIndex(sources) {
@@ -180,7 +208,35 @@ function buildStableOptions(existingSource = null) {
     };
 }
 
-function buildManagedProfile(stableSourceId, config, existingProfile = null) {
+function resolveManagedPublicManualNodeIds(config, existingProfile, sources) {
+    const sourceById = new Map(
+        normalizeSourceCollection(sources).map(source => [source.id, source])
+    );
+
+    const configuredConnectorIds = normalizeStringArray(config.defaultPublicProfileConnectorIds).filter(id => {
+        const source = sourceById.get(id);
+        return Boolean(source) && isConnectorSource(source);
+    });
+
+    const preservedConnectorIds = configuredConnectorIds.length > 0
+        ? configuredConnectorIds
+        : normalizeStringArray(existingProfile?.manualNodes).filter(id => {
+            const source = sourceById.get(id);
+            return Boolean(source) && isConnectorSource(source);
+        });
+
+    const preservedRuntimeIds = normalizeStringArray(existingProfile?.manualNodes).filter(id => {
+        const source = sourceById.get(id);
+        return Boolean(source) && isManagedRuntimeProxySource(source);
+    });
+
+    return normalizeStringArray([
+        ...preservedRuntimeIds,
+        ...preservedConnectorIds,
+    ]);
+}
+
+function buildManagedProfile(stableSourceId, manualNodeIds, config, existingProfile = null) {
     const profile = existingProfile && typeof existingProfile === 'object'
         ? cloneObject(existingProfile)
         : {};
@@ -190,7 +246,7 @@ function buildManagedProfile(stableSourceId, config, existingProfile = null) {
         name: config.defaultPublicProfileName,
         enabled: true,
         subscriptions: stableSourceId ? [stableSourceId] : [],
-        manualNodes: [],
+        manualNodes: normalizeStringArray(manualNodeIds),
         customId: config.defaultPublicProfileCustomId,
         expiresAt: '',
         isPublic: true,
@@ -504,6 +560,20 @@ export async function syncAggregatorArtifacts({
         }
     }
 
+    if (config.stableSourceEnabled && stableSourceId && config.secondaryProbeEnabled) {
+        const stableIndex = nextSources.findIndex(source => source?.id === stableSourceId);
+        if (stableIndex >= 0) {
+            const [probedStable] = await probeSourceItems([nextSources[stableIndex]], {
+                concurrency: 1,
+                fetchImpl
+            });
+            if (probedStable && JSON.stringify(nextSources[stableIndex]) !== JSON.stringify(probedStable)) {
+                nextSources[stableIndex] = probedStable;
+                changedSources = true;
+            }
+        }
+    }
+
     if (config.stableSourceEnabled && config.stableSourceUrl && !stableSourceId) {
         const stableIndex = findManagedStableSourceIndex(nextSources);
         if (stableIndex !== -1) {
@@ -519,7 +589,8 @@ export async function syncAggregatorArtifacts({
         );
 
         const existingProfile = profileIndex >= 0 ? nextProfiles[profileIndex] : null;
-        const managedProfile = buildManagedProfile(stableSourceId, config, existingProfile);
+        const manualNodeIds = resolveManagedPublicManualNodeIds(config, existingProfile, nextSources);
+        const managedProfile = buildManagedProfile(stableSourceId, manualNodeIds, config, existingProfile);
 
         if (profileIndex >= 0) {
             if (JSON.stringify(nextProfiles[profileIndex]) !== JSON.stringify(managedProfile)) {

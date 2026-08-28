@@ -34,6 +34,7 @@ const aggregatorSyncConfig = computed({
       defaultPublicProfileEnabled: true,
       defaultPublicProfileCustomId: 'aggregator-global',
       defaultPublicProfileName: 'Aggregator Global',
+      defaultPublicProfileConnectorIds: [],
       runOnCron: true,
       autoDisableMissing: true,
       lastSyncAt: '',
@@ -182,7 +183,7 @@ async function handleSyncNow() {
         <div class="flex items-center justify-between p-4 bg-white/70 dark:bg-gray-900/50 border border-gray-200/70 dark:border-white/10 misub-radius-lg">
           <div>
             <p class="text-sm font-medium text-gray-900 dark:text-gray-200">维护默认公共 Profile</p>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">默认公共 profile 将只挂稳定源，不直接挂 crawler 原始发现源。</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">默认公共 profile 会挂稳定源，并可额外挂上显式指定的 connector；不会直接挂 crawler 原始发现源。</p>
           </div>
           <Switch v-model="aggregatorSyncConfig.defaultPublicProfileEnabled" />
         </div>
@@ -243,6 +244,21 @@ async function handleSyncNow() {
           class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-300 dark:border-gray-600 misub-radius-lg shadow-xs focus:ring-1 focus:ring-orange-500 focus:border-orange-500 sm:text-sm dark:text-white transition-colors"
         />
       </div>
+    </div>
+
+    <div v-if="aggregatorSyncConfig.defaultPublicProfileEnabled">
+      <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">默认公共 Profile Connector IDs</label>
+      <textarea
+        :value="(aggregatorSyncConfig.defaultPublicProfileConnectorIds || []).join('\n')"
+        @input="aggregatorSyncConfig.defaultPublicProfileConnectorIds = $event.target.value.split(/[\r\n,]+/).map(item => item.trim()).filter(Boolean)"
+        rows="4"
+        placeholder="每行一个 connector source id，例如 conn_ech_workers_pref_1"
+        class="block w-full px-3 py-2 bg-gray-50 dark:bg-gray-900/50 border border-gray-300 dark:border-gray-600 misub-radius-lg shadow-xs focus:ring-1 focus:ring-orange-500 focus:border-orange-500 sm:text-sm dark:text-white transition-colors font-mono"
+      />
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        这里填写的 connector 会直接作为 MiSub 的 profile manualNodes 输出到 machine manifest。
+        它们不是 aggregator 发现源，而是 MiSub 自己托管的手动来源 / ECH Worker metadata。
+      </p>
     </div>
 
     <div class="misub-radius-lg border px-4 py-3 text-sm"
