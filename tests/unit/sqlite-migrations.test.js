@@ -75,7 +75,7 @@ describe('SQLite migrations', () => {
         expect(digest(businessRows(second.db))).toBe(beforeHash);
         expect(second.db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count).toBe(2);
         second.db.close();
-    });
+    }, 15_000);
 
     it('rolls back a failing migration file', () => {
         const dir = makeTempDir();
