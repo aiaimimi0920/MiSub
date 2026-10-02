@@ -23,7 +23,7 @@ export function useManualNodes(markDirty) {
     const settingsStore = useSettingsStore();
     const { subscriptions: allSubscriptions } = storeToRefs(dataStore);
 
-    // Manual Nodes are items in subscriptions that are NOT http/https
+    // 手工来源包括直接代理和 Connector，HTTP 地址同样可以是手工来源。
     // We filter from the shared store state
     // [FIX] 添加更严格的验证,确保只识别有效的手工节点
     const manualNodes = computed(() => {
@@ -287,7 +287,7 @@ export function useManualNodes(markDirty) {
 
         // 1. Get all Subscriptions (to preserve them)
         const currentSubscriptions = (allSubscriptions.value || []).filter(
-            (item) => item.url && /^https?:\/\//.test(item.url)
+            (item) => !isManualNodeEntry(item)
         );
 
         // 2. Combine Existing Subscriptions + New Ordered Manual Nodes

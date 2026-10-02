@@ -1,4 +1,5 @@
 import { NODE_PROTOCOL_REGEX } from '@/constants/nodeProtocols.js';
+import { getSourceInput, isConnectorSource, isProxyURISource } from '@/shared/source-utils.js';
 import { DEFAULT_GROUP_KEY } from './groups.js';
 
 export const countryCodeMap = {
@@ -59,13 +60,12 @@ export const countryCodeMap = {
 };
 
 export function isManualNodeEntry(item) {
-    if (!item.url) return false;
-    if (typeof item.url !== 'string') return false;
-
-    const trimmedUrl = item.url.trim();
+    if (!item || typeof item !== 'object') return false;
+    const trimmedUrl = getSourceInput(item);
     if (!trimmedUrl) return false;
 
-    if (/^https?:\/\//i.test(trimmedUrl)) return false;
+    if (isConnectorSource(item)) return true;
+    if (!isProxyURISource(item)) return false;
 
     return NODE_PROTOCOL_REGEX.test(trimmedUrl);
 }

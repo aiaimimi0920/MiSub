@@ -7,6 +7,7 @@ import { fetchNodeCount, batchUpdateNodes } from '../lib/api.js';
 import { handleError } from '../utils/errorHandler.js';
 import { TIMING } from '../constants/timing.js';
 import { t } from '../i18n/index.js';
+import { isSubscriptionSource } from '../shared/source-utils.js';
 
 const isDev = import.meta.env.DEV;
 
@@ -16,10 +17,10 @@ export function useSubscriptions(markDirty) {
     // Rename the store ref to avoid confusion, as it contains ALL items
     const { subscriptions: allSubscriptions } = storeToRefs(dataStore);
 
-    // Filtered computed property: Only http/https links are "Subscriptions"
+    // 按来源类型分类，不能将 HTTP Connector 或代理误当作订阅。
     const subscriptions = computed(() => {
         return (allSubscriptions.value || []).filter(
-            (sub) => sub.url && /^https?:\/\//.test(sub.url)
+            isSubscriptionSource
         );
     });
 
@@ -478,7 +479,7 @@ export function useSubscriptions(markDirty) {
         // We can't rely just on manualNodes computed because it might be filtered or not imported here.
         // Instead, filter from source of truth: allSubscriptions
         const currentManualNodes = (allSubscriptions.value || []).filter(
-            (item) => !item.url || !/^https?:\/\//.test(item.url)
+            (item) => !isSubscriptionSource(item)
         );
 
         // 2. Combine New Ordered Subscriptions + Existing Manual Nodes

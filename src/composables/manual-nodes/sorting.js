@@ -1,5 +1,7 @@
+import { isManualNodeEntry } from './filters.js';
+
 export function buildAutoSortedSubscriptions(allSubscriptions, manualNodes) {
-    const subs = allSubscriptions.filter((s) => s.url && /^https?:\/\//.test(s.url));
+    const subs = allSubscriptions.filter((s) => !isManualNodeEntry(s));
     const nodes = [...manualNodes];
 
     const regionKeywords = {
