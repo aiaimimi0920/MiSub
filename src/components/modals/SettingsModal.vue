@@ -1,42 +1,54 @@
 <script setup>
-import { ref, watch } from 'vue';
-import Modal from '../forms/Modal.vue';
-import SettingsPanel from './SettingsPanel.vue';
+    import { useI18n } from '../../i18n/index.js';
 
-const props = defineProps({
-  show: Boolean,
-  exportBackup: Function,
-  importBackup: Function,
-});
+    const { t } = useI18n();
+    import { ref, watch } from 'vue';
+    import Modal from '../forms/Modal.vue';
+    import SettingsPanel from './SettingsPanel.vue';
 
-const emit = defineEmits(['update:show']);
+    const props = defineProps({
+        show: Boolean,
+        exportBackup: Function,
+        importBackup: Function,
+    });
 
-const settingsPanelRef = ref(null);
+    const emit = defineEmits(['update:show']);
 
-const handleConfirm = () => {
-    if (settingsPanelRef.value) {
-        settingsPanelRef.value.handleSave();
-    }
-    // Note: Modal automatically emits update:show false, causing close.
-    // Since handleSave triggers a reload after success, this behavior is acceptable.
-    // If we wanted to keep it open during save, we would need to modify Modal.vue to prevent close.
-};
+    const settingsPanelRef = ref(null);
+
+    const handleConfirm = async () => {
+        if (!settingsPanelRef.value) return;
+
+        const didSave = await settingsPanelRef.value.handleSave();
+        if (didSave) {
+            emit('update:show', false);
+        }
+    };
 </script>
 
 <template>
-  <Modal 
-    :show="show" 
-    @update:show="emit('update:show', $event)" 
-    @confirm="handleConfirm"
-    size="6xl"
-  >
-    <template #title>
-      <div class="bg-white/80 dark:bg-gray-900/60 border border-gray-100/80 dark:border-white/10 misub-radius-lg px-4 py-2">
-        <h3 class="text-lg font-bold text-gray-800 dark:text-white">设置</h3>
-      </div>
-    </template>
-    <template #body>
-       <SettingsPanel ref="settingsPanelRef" :export-backup="props.exportBackup" :import-backup="props.importBackup" />
-    </template>
-  </Modal>
+    <Modal
+        :show="show"
+        @update:show="emit('update:show', $event)"
+        @confirm="handleConfirm"
+        :close-on-confirm="false"
+        size="6xl"
+    >
+        <template #title>
+            <div
+                class="bg-white/80 dark:bg-gray-900/60 border border-gray-100/80 dark:border-white/10 misub-radius-lg px-4 py-2"
+            >
+                <h3 class="text-lg font-bold text-gray-800 dark:text-white">
+                    {{ t('settings.title') }}
+                </h3>
+            </div>
+        </template>
+        <template #body>
+            <SettingsPanel
+                ref="settingsPanelRef"
+                :export-backup="props.exportBackup"
+                :import-backup="props.importBackup"
+            />
+        </template>
+    </Modal>
 </template>

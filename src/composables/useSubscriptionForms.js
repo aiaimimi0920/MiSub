@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import { useToastStore } from '../stores/toast.js';
 import { generateSubscriptionId } from '../utils/id.js';
-import { isSubscriptionSource, normalizeSourceItem } from '../shared/source-utils.js';
+import { t } from '../i18n/index.js';
 
 const isDev = import.meta.env.DEV;
 
@@ -16,14 +16,15 @@ export function useSubscriptionForms({ addSubscription, updateSubscription }) {
         editingSubscription.value = {
             name: '',
             url: '',
-            input: '',
-            kind: 'subscription',
             enabled: true,
             exclude: '',
-            customUserAgent: 'MiSub',
+            customUserAgent: '',
             fetchProxy: '',
+            enableNodeCache: false,
             plusAsSpace: false,
-            notes: ''
+            excludeTraffic: false,
+            website: '',
+            notes: '',
         };
         showModal.value = true;
     };
@@ -41,29 +42,33 @@ export function useSubscriptionForms({ addSubscription, updateSubscription }) {
         try {
             editingSubscription.value = JSON.parse(JSON.stringify(sub));
             if (isDev) {
-                console.debug('UseSubscriptionForms: editingSubscription set to', editingSubscription.value);
+                console.debug(
+                    'UseSubscriptionForms: editingSubscription set to',
+                    editingSubscription.value
+                );
             }
             showModal.value = true;
         } catch (e) {
+            // 克隆失败会导致编辑弹窗打不开，必须告知用户，否则点击「编辑」毫无反应
             console.error('UseSubscriptionForms: Failed to clone subscription', e);
+            showToast(t('subscriptions.openEditFailed'), 'error');
         }
     };
 
     const handleSave = () => {
         if (!editingSubscription.value || !editingSubscription.value.url) {
-            showToast('订阅链接不能为空', 'error');
+            showToast(t('subscriptions.urlRequired'), 'error');
             return;
         }
-        const normalized = normalizeSourceItem(editingSubscription.value);
-        if (!isSubscriptionSource(normalized)) {
-            showToast('请输入有效的 http:// 或 https:// 订阅链接', 'error');
+        if (!/^https?:\/\//i.test(editingSubscription.value.url)) {
+            showToast(t('subscriptions.invalidUrl'), 'error');
             return;
         }
 
         if (isNew.value) {
-            addSubscription({ ...normalized, id: generateSubscriptionId() });
+            addSubscription({ ...editingSubscription.value, id: generateSubscriptionId() });
         } else {
-            updateSubscription(normalized);
+            updateSubscription(editingSubscription.value);
         }
         showModal.value = false;
     };
@@ -74,6 +79,6 @@ export function useSubscriptionForms({ addSubscription, updateSubscription }) {
         editingSubscription,
         openAdd,
         openEdit,
-        handleSave
+        handleSave,
     };
 }

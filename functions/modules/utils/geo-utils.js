@@ -8,178 +8,476 @@
  * 支持多语言地区识别
  */
 export const REGION_KEYWORDS = {
-    '香港': ['HK', 'HKG', '香港', 'Hong Kong', 'HongKong'],
-    '台湾': ['TW', 'TPE', '台湾', '台北', 'Taiwan', 'Taipei'],
-    '新加坡': ['SG', 'SIN', '新加坡', 'Singapore'],
-    '日本': ['JP', 'JPN', 'NRT', 'HND', 'KIX', 'FUK', '东京', '大阪', '日本', 'Japan', 'Tokyo', 'Osaka', 'Fukuoka', 'Yokohama'],
-    '美国': ['US', 'USA', 'LAX', 'SFO', 'SEA', 'JFK', 'NYC', 'ORD', 'DFW', 'IAD', '美国', 'United States', 'America', 'Los Angeles', 'New York', 'San Francisco', 'Seattle', 'Chicago', '洛杉矶', '纽约', '旧金山', '西雅图', '芝加哥'],
-    '韩国': ['KR', 'KOR', 'ICN', '韩国', '首尔', 'Korea', 'Seoul'],
-    '英国': ['UK', 'GB', 'LHR', 'LGW', 'LON', '英国', 'Britain', 'London', 'Manchester', '伦敦', '曼彻斯特'],
-    '德国': ['DE', 'DEU', 'FRA', 'MUC', '德国', 'Germany', 'Frankfurt', 'Berlin', 'Munich', '法兰克福', '柏林', '慕尼黑'],
-    '法国': ['FR', 'CDG', 'ORY', '法国', 'France', 'Paris', 'Lyon', 'Marseille', '巴黎', '里昂', '马赛'],
-    '加拿大': ['CA', 'CAN', 'YVR', 'YYZ', '加拿大', 'Canada', 'Toronto', 'Vancouver', 'Montreal', '多伦多', '温哥华', '蒙特利尔'],
-    '澳大利亚': ['AU', 'AUS', 'SYD', 'MEL', 'BNE', 'PER', '澳大利亚', 'Australia', 'Sydney', 'Melbourne', 'Brisbane', 'Perth', '悉尼', '墨尔本', '布里斯班', '珀斯'],
-    '荷兰': ['NL', 'NLD', 'AMS', '荷兰', 'Netherlands', 'Amsterdam', 'Rotterdam', '阿姆斯特丹', '鹿特丹'],
-    '俄罗斯': ['RU', 'RUS', 'SVO', 'DME', '俄罗斯', 'Russia', 'Moscow', 'Saint Petersburg', '莫斯科', '圣彼得堡'],
-    '印度': ['IN', 'IND', 'BOM', 'DEL', 'BLR', '印度', 'India', 'Mumbai', 'Delhi', 'Bangalore', '孟买', '德里', '班加罗尔'],
-    '土耳其': ['TR', 'TUR', 'IST', '土耳其', 'Turkey', 'Istanbul', 'Ankara', '伊斯坦布尔', '安卡拉'],
-    '孟加拉': ['BD', 'BGD', 'DAC', '孟加拉', '孟加拉国', 'Bangladesh', 'Dhaka', '达卡'],
-    '巴基斯坦': ['PK', 'PAK', 'ISB', 'LHE', '巴基斯坦', 'Pakistan', 'Islamabad', 'Lahore', '伊斯兰堡', '拉合尔'],
-    '马来西亚': ['MY', 'MYS', 'KUL', '马来西亚', 'Malaysia', 'Kuala Lumpur', '吉隆坡'],
-    '泰国': ['TH', 'THA', 'BKK', '泰国', 'Thailand', 'Bangkok', 'Pattaya', '曼谷', '芭提雅'],
-    '越南': ['VN', 'VNM', 'SGN', 'HAN', '越南', 'Vietnam', 'Ho Chi Minh City', 'Hanoi', '胡志明市', '河内'],
-    '菲律宾': ['PH', 'PHL', 'MNL', 'CEB', '菲律宾', 'Philippines', 'Manila', 'Cebu', '马尼拉', '宿务'],
-    '印尼': ['ID', 'IDN', 'CGK', '印尼', '印度尼西亚', 'Indonesia', 'Jakarta', 'Surabaya', 'Bandung', '雅加达', '泗水', '万隆'],
-    '文莱': ['BN', 'BRN', 'BWN', '文莱', 'Brunei', 'Bandar Seri Begawan', '斯里巴加湾市'],
-    '柬埔寨': ['KH', 'KHM', 'PNH', '柬埔寨', 'Cambodia', 'Phnom Penh', '金边'],
-    '老挝': ['LA', 'LAO', 'VTE', '老挝', 'Laos', 'Vientiane', '万象'],
-    '缅甸': ['MM', 'MMR', 'RGN', '缅甸', 'Myanmar', 'Burma', 'Yangon', 'Rangoon', '仰光'],
-    '瑞士': ['CH', 'CHE', 'ZRH', 'GVA', '瑞士', 'Switzerland', 'Zurich', 'Geneva', '苏黎世', '日内瓦'],
-    '意大利': ['IT', 'ITA', 'FCO', 'MXP', '意大利', 'Italy', 'Rome', 'Milan', 'Naples', '罗马', '米兰', '那不勒斯'],
-    '西班牙': ['ES', 'ESP', 'MAD', 'BCN', '西班牙', 'Spain', 'Madrid', 'Barcelona', '马德里', '巴塞罗那'],
-    '巴西': ['BR', 'BRA', 'GRU', 'GIG', '巴西', 'Brazil', 'São Paulo', 'Rio de Janeiro', '圣保罗', '里约'],
-    '阿根廷': ['AR', 'ARG', 'EZE', '阿根廷', 'Argentina', 'Buenos Aires', '布宜诺斯艾利斯'],
-    '墨西哥': ['MX', 'MEX', '墨西哥', 'Mexico', 'Mexico City', '墨西哥城'],
-    '哥伦比亚': ['CO', 'COL', 'BOG', '哥伦比亚', 'Colombia', 'Bogota', 'Bogotá', '波哥大'],
-    '秘鲁': ['PE', 'PER', 'LIM', '秘鲁', 'Peru', 'Lima', '利马'],
-    '南非': ['ZA', 'ZAF', 'JNB', 'CPT', '南非', 'South Africa', 'Johannesburg', 'Cape Town', '约翰内斯堡', '开普敦'],
-    '埃及': ['EG', 'EGY', 'CAI', '埃及', 'Egypt', 'Cairo', '开罗'],
-    '以色列': ['IL', 'ISR', 'TLV', '以色列', 'Israel', 'Tel Aviv', 'Jerusalem', '特拉维夫', '耶路撒冷'],
-    '阿联酋': ['AE', 'ARE', 'DXB', 'AUH', '阿联酋', 'UAE', 'Dubai', 'Abu Dhabi', 'Sharjah', '迪拜', '阿布扎比', '沙迦'],
-    '阿曼': ['OM', 'OMN', 'MCT', '阿曼', 'Oman', 'Muscat', '马斯喀特'],
-    '沙特': ['SA', 'SAU', 'RUH', 'JED', '沙特', 'Saudi Arabia', 'Riyadh', 'Jeddah', '利雅得', '吉达'],
-    '波兰': ['PL', 'POL', 'WAW', '波兰', 'Poland', 'Warsaw', 'Krakow', '华沙', '克拉科夫'],
-    '捷克': ['CZ', 'CZE', 'PRG', '捷克', 'Czech Republic', 'Prague', '布拉格'],
-    '匈牙利': ['HU', 'HUN', 'BUD', '匈牙利', 'Hungary', 'Budapest', '布达佩斯'],
-    '罗马尼亚': ['RO', 'ROU', 'OTP', '罗马尼亚', 'Romania', 'Bucharest', '布加勒斯特'],
-    '保加利亚': ['BG', 'BGR', 'SOF', '保加利亚', 'Bulgaria', 'Sofia', '索非亚'],
-    '希腊': ['GR', 'GRC', 'ATH', '希腊', 'Greece', 'Athens', 'Thessaloniki', '雅典', '塞萨洛尼基'],
-    '葡萄牙': ['PT', 'PRT', 'LIS', '葡萄牙', 'Portugal', 'Lisbon', 'Porto', '里斯本', '波尔图'],
-    '瑞典': ['SE', 'SWE', 'ARN', '瑞典', 'Sweden', 'Stockholm', 'Gothenburg', '斯德哥尔摩', '哥德堡'],
-    '挪威': ['NO', 'NOR', 'OSL', '挪威', 'Norway', 'Oslo', 'Bergen', '奥斯陆', '卑尔根'],
-    '丹麦': ['DK', 'DNK', 'CPH', '丹麦', 'Denmark', 'Copenhagen', 'Aarhus', '哥本哈根', '奥胡斯'],
-    '芬兰': ['FI', 'FIN', 'HEL', '芬兰', 'Finland', 'Helsinki', '赫尔辛基'],
-    '奥地利': ['AT', 'AUT', 'VIE', '奥地利', 'Austria', 'Vienna', 'Salzburg', '维也纳', '萨尔茨堡'],
-    '爱尔兰': ['IE', 'IRL', 'DUB', '爱尔兰', 'Ireland', 'Dublin', '都柏林'],
-    '冰岛': ['IS', 'ISL', 'KEF', '冰岛', 'Iceland', 'Reykjavik', '雷克雅未克'],
-    '卢森堡': ['LU', 'LUX', '卢森堡', 'Luxembourg', 'Luxembourg City', '卢森堡市'],
-    '马耳他': ['MT', 'MLT', 'MLA', '马耳他', 'Malta', 'Valletta', '瓦莱塔'],
-    '斯洛伐克': ['SK', 'SVK', 'BTS', '斯洛伐克', 'Slovakia', 'Bratislava', '布拉迪斯拉发'],
-    '斯洛文尼亚': ['SI', 'SVN', 'LJU', '斯洛文尼亚', 'Slovenia', 'Ljubljana', '卢布尔雅那'],
-    '克罗地亚': ['HR', 'HRV', 'ZAG', '克罗地亚', 'Croatia', 'Zagreb', '萨格勒布'],
-    '拉脱维亚': ['LV', 'LVA', 'RIX', '拉脱维亚', 'Latvia', 'Riga', '里加'],
-    '立陶宛': ['LT', 'LTU', 'VNO', '立陶宛', 'Lithuania', 'Vilnius', '维尔纽斯'],
-    '爱沙尼亚': ['EE', 'EST', 'TLL', '爱沙尼亚', 'Estonia', 'Tallinn', '塔林'],
-    '塞浦路斯': ['CY', 'CYP', 'LCA', '塞浦路斯', 'Cyprus', 'Nicosia', '尼科西亚'],
-    '列支敦士登': ['LI', 'LIE', '列支敦士登', 'Liechtenstein', 'Vaduz', '瓦杜兹'],
-    '阿尔巴尼亚': ['AL', 'ALB', 'TIA', '阿尔巴尼亚', 'Albania', 'Tirana', '地拉那'],
-    '安道尔': ['AD', 'AND', '安道尔', 'Andorra', 'Andorra la Vella', '安道尔城'],
-    '白俄罗斯': ['BY', 'BLR', 'MSQ', '白俄罗斯', 'Belarus', 'Minsk', '明斯克'],
-    '波黑': ['BA', 'BIH', 'SJJ', '波黑', '波斯尼亚', 'Bosnia', 'Bosnia and Herzegovina', 'Sarajevo', '萨拉热窝'],
-    '摩尔多瓦': ['MD', 'MDA', 'KIV', '摩尔多瓦', 'Moldova', 'Chisinau', 'Chișinău', '基希讷乌'],
-    '摩纳哥': ['MC', 'MCO', '摩纳哥', 'Monaco', 'Monte Carlo', '蒙特卡洛'],
-    '黑山': ['ME', 'MNE', 'TGD', '黑山', 'Montenegro', 'Podgorica', '波德戈里察'],
-    '北马其顿': ['MK', 'MKD', 'SKP', '北马其顿', 'North Macedonia', 'Macedonia', 'Skopje', '斯科普里'],
-    '塞尔维亚': ['RS', 'SRB', 'BEG', '塞尔维亚', 'Serbia', 'Belgrade', '贝尔格莱德'],
-    '乌克兰': ['UA', 'UKR', 'KBP', '乌克兰', 'Ukraine', 'Kyiv', 'Kiev', '基辅'],
-    '科索沃': ['XK', 'XKS', 'PRN', '科索沃', 'Kosovo', 'Pristina', '普里什蒂纳'],
-    '圣马力诺': ['SM', 'SMR', '圣马力诺', 'San Marino'],
-    '梵蒂冈': ['VA', 'VAT', '梵蒂冈', 'Vatican', 'Vatican City', '梵蒂冈城'],
-    '格鲁吉亚': ['GE', 'GEO', 'TBS', '格鲁吉亚', 'Georgia', 'Tbilisi', '第比利斯'],
-    '亚美尼亚': ['AM', 'ARM', 'EVN', '亚美尼亚', 'Armenia', 'Yerevan', '埃里温'],
-    '阿塞拜疆': ['AZ', 'AZE', 'GYD', '阿塞拜疆', 'Azerbaijan', 'Baku', '巴库'],
-    '比利时': ['BE', 'BEL', 'BRU', '比利时', 'Belgium', 'Brussels', '安特卫普', '布鲁塞尔', 'Antwerp']
+    香港: ['HK', 'HKG', 'HKT', '香港', 'Hong Kong', 'HongKong'],
+    台湾: ['TW', 'TPE', '台湾', '台北', 'Taiwan', 'Taipei'],
+    新加坡: ['SG', 'SIN', '新加坡', 'Singapore'],
+    日本: [
+        'JP',
+        'JPN',
+        'NRT',
+        'HND',
+        'KIX',
+        'FUK',
+        '东京',
+        '大阪',
+        '日本',
+        'Japan',
+        'Tokyo',
+        'Osaka',
+        'Fukuoka',
+        'Yokohama',
+    ],
+    美国: [
+        'US',
+        'USA',
+        'LAX',
+        'SFO',
+        'SEA',
+        'JFK',
+        'NYC',
+        'ORD',
+        'DFW',
+        'IAD',
+        '美国',
+        'United States',
+        'America',
+        'Los Angeles',
+        'New York',
+        'San Francisco',
+        'Seattle',
+        'Chicago',
+        '洛杉矶',
+        '纽约',
+        '旧金山',
+        '西雅图',
+        '芝加哥',
+    ],
+    韩国: ['KR', 'KOR', 'ICN', '韩国', '首尔', 'Korea', 'Seoul'],
+    英国: [
+        'UK',
+        'GB',
+        'LHR',
+        'LGW',
+        'LON',
+        '英国',
+        'Britain',
+        'London',
+        'Manchester',
+        '伦敦',
+        '曼彻斯特',
+    ],
+    德国: [
+        'DE',
+        'DEU',
+        'FRA',
+        'MUC',
+        '德国',
+        'Germany',
+        'Frankfurt',
+        'Berlin',
+        'Munich',
+        '法兰克福',
+        '柏林',
+        '慕尼黑',
+    ],
+    法国: [
+        'FR',
+        'CDG',
+        'ORY',
+        '法国',
+        'France',
+        'Paris',
+        'Lyon',
+        'Marseille',
+        '巴黎',
+        '里昂',
+        '马赛',
+    ],
+    加拿大: [
+        'CA',
+        'CAN',
+        'YVR',
+        'YYZ',
+        '加拿大',
+        'Canada',
+        'Toronto',
+        'Vancouver',
+        'Montreal',
+        '多伦多',
+        '温哥华',
+        '蒙特利尔',
+    ],
+    澳大利亚: [
+        'AU',
+        'AUS',
+        'SYD',
+        'MEL',
+        'BNE',
+        'PER',
+        '澳大利亚',
+        'Australia',
+        'Sydney',
+        'Melbourne',
+        'Brisbane',
+        'Perth',
+        '悉尼',
+        '墨尔本',
+        '布里斯班',
+        '珀斯',
+    ],
+    荷兰: [
+        'NL',
+        'NLD',
+        'AMS',
+        '荷兰',
+        'Netherlands',
+        'Amsterdam',
+        'Rotterdam',
+        '阿姆斯特丹',
+        '鹿特丹',
+    ],
+    俄罗斯: [
+        'RU',
+        'RUS',
+        'SVO',
+        'DME',
+        '俄罗斯',
+        'Russia',
+        'Moscow',
+        'Saint Petersburg',
+        '莫斯科',
+        '圣彼得堡',
+    ],
+    印度: [
+        'IN',
+        'IND',
+        'BOM',
+        'DEL',
+        'BLR',
+        '印度',
+        'India',
+        'Mumbai',
+        'Delhi',
+        'Bangalore',
+        '孟买',
+        '德里',
+        '班加罗尔',
+    ],
+    土耳其: ['TR', 'TUR', 'IST', '土耳其', 'Turkey', 'Istanbul', 'Ankara', '伊斯坦布尔', '安卡拉'],
+    孟加拉: ['BD', 'BGD', 'DAC', '孟加拉', '孟加拉国', 'Bangladesh', 'Dhaka', '达卡'],
+    巴基斯坦: [
+        'PK',
+        'PAK',
+        'ISB',
+        'LHE',
+        '巴基斯坦',
+        'Pakistan',
+        'Islamabad',
+        'Lahore',
+        '伊斯兰堡',
+        '拉合尔',
+    ],
+    马来西亚: ['MY', 'MYS', 'KUL', '马来西亚', 'Malaysia', 'Kuala Lumpur', '吉隆坡'],
+    泰国: ['TH', 'THA', 'BKK', '泰国', 'Thailand', 'Bangkok', 'Pattaya', '曼谷', '芭提雅'],
+    越南: [
+        'VN',
+        'VNM',
+        'SGN',
+        'HAN',
+        '越南',
+        'Vietnam',
+        'Ho Chi Minh City',
+        'Hanoi',
+        '胡志明市',
+        '河内',
+    ],
+    菲律宾: [
+        'PH',
+        'PHL',
+        'MNL',
+        'CEB',
+        '菲律宾',
+        'Philippines',
+        'Manila',
+        'Cebu',
+        '马尼拉',
+        '宿务',
+    ],
+    印尼: [
+        'ID',
+        'IDN',
+        'CGK',
+        '印尼',
+        '印度尼西亚',
+        'Indonesia',
+        'Jakarta',
+        'Surabaya',
+        'Bandung',
+        '雅加达',
+        '泗水',
+        '万隆',
+    ],
+    文莱: ['BN', 'BRN', 'BWN', '文莱', 'Brunei', 'Bandar Seri Begawan', '斯里巴加湾市'],
+    柬埔寨: ['KH', 'KHM', 'PNH', '柬埔寨', 'Cambodia', 'Phnom Penh', '金边'],
+    老挝: ['LA', 'LAO', 'VTE', '老挝', 'Laos', 'Vientiane', '万象'],
+    缅甸: ['MM', 'MMR', 'RGN', '缅甸', 'Myanmar', 'Burma', 'Yangon', 'Rangoon', '仰光'],
+    瑞士: [
+        'CH',
+        'CHE',
+        'ZRH',
+        'GVA',
+        '瑞士',
+        'Switzerland',
+        'Zurich',
+        'Geneva',
+        '苏黎世',
+        '日内瓦',
+    ],
+    意大利: [
+        'IT',
+        'ITA',
+        'FCO',
+        'MXP',
+        '意大利',
+        'Italy',
+        'Rome',
+        'Milan',
+        'Naples',
+        '罗马',
+        '米兰',
+        '那不勒斯',
+    ],
+    西班牙: [
+        'ES',
+        'ESP',
+        'MAD',
+        'BCN',
+        '西班牙',
+        'Spain',
+        'Madrid',
+        'Barcelona',
+        '马德里',
+        '巴塞罗那',
+    ],
+    巴西: [
+        'BR',
+        'BRA',
+        'GRU',
+        'GIG',
+        '巴西',
+        'Brazil',
+        'São Paulo',
+        'Rio de Janeiro',
+        '圣保罗',
+        '里约',
+    ],
+    阿根廷: ['AR', 'ARG', 'EZE', '阿根廷', 'Argentina', 'Buenos Aires', '布宜诺斯艾利斯'],
+    墨西哥: ['MX', 'MEX', '墨西哥', 'Mexico', 'Mexico City', '墨西哥城'],
+    哥伦比亚: ['CO', 'COL', 'BOG', '哥伦比亚', 'Colombia', 'Bogota', 'Bogotá', '波哥大'],
+    秘鲁: ['PE', 'PER', 'LIM', '秘鲁', 'Peru', 'Lima', '利马'],
+    南非: [
+        'ZA',
+        'ZAF',
+        'JNB',
+        'CPT',
+        '南非',
+        'South Africa',
+        'Johannesburg',
+        'Cape Town',
+        '约翰内斯堡',
+        '开普敦',
+    ],
+    埃及: ['EG', 'EGY', 'CAI', '埃及', 'Egypt', 'Cairo', '开罗'],
+    以色列: [
+        'IL',
+        'ISR',
+        'TLV',
+        '以色列',
+        'Israel',
+        'Tel Aviv',
+        'Jerusalem',
+        '特拉维夫',
+        '耶路撒冷',
+    ],
+    阿联酋: [
+        'AE',
+        'ARE',
+        'DXB',
+        'AUH',
+        '阿联酋',
+        'UAE',
+        'Dubai',
+        'Abu Dhabi',
+        'Sharjah',
+        '迪拜',
+        '阿布扎比',
+        '沙迦',
+    ],
+    阿曼: ['OM', 'OMN', 'MCT', '阿曼', 'Oman', 'Muscat', '马斯喀特'],
+    沙特: ['SA', 'SAU', 'RUH', 'JED', '沙特', 'Saudi Arabia', 'Riyadh', 'Jeddah', '利雅得', '吉达'],
+    波兰: ['PL', 'POL', 'WAW', '波兰', 'Poland', 'Warsaw', 'Krakow', '华沙', '克拉科夫'],
+    捷克: ['CZ', 'CZE', 'PRG', '捷克', 'Czech Republic', 'Prague', '布拉格'],
+    匈牙利: ['HU', 'HUN', 'BUD', '匈牙利', 'Hungary', 'Budapest', '布达佩斯'],
+    罗马尼亚: ['RO', 'ROU', 'OTP', '罗马尼亚', 'Romania', 'Bucharest', '布加勒斯特'],
+    保加利亚: ['BG', 'BGR', 'SOF', '保加利亚', 'Bulgaria', 'Sofia', '索非亚'],
+    希腊: ['GR', 'GRC', 'ATH', '希腊', 'Greece', 'Athens', 'Thessaloniki', '雅典', '塞萨洛尼基'],
+    葡萄牙: ['PT', 'PRT', 'LIS', '葡萄牙', 'Portugal', 'Lisbon', 'Porto', '里斯本', '波尔图'],
+    瑞典: ['SE', 'SWE', 'ARN', '瑞典', 'Sweden', 'Stockholm', 'Gothenburg', '斯德哥尔摩', '哥德堡'],
+    挪威: ['NO', 'NOR', 'OSL', '挪威', 'Norway', 'Oslo', 'Bergen', '奥斯陆', '卑尔根'],
+    丹麦: ['DK', 'DNK', 'CPH', '丹麦', 'Denmark', 'Copenhagen', 'Aarhus', '哥本哈根', '奥胡斯'],
+    芬兰: ['FI', 'FIN', 'HEL', '芬兰', 'Finland', 'Helsinki', '赫尔辛基'],
+    奥地利: ['AT', 'AUT', 'VIE', '奥地利', 'Austria', 'Vienna', 'Salzburg', '维也纳', '萨尔茨堡'],
+    爱尔兰: ['IE', 'IRL', 'DUB', '爱尔兰', 'Ireland', 'Dublin', '都柏林'],
+    冰岛: ['IS', 'ISL', 'KEF', '冰岛', 'Iceland', 'Reykjavik', '雷克雅未克'],
+    卢森堡: ['LU', 'LUX', '卢森堡', 'Luxembourg', 'Luxembourg City', '卢森堡市'],
+    马耳他: ['MT', 'MLT', 'MLA', '马耳他', 'Malta', 'Valletta', '瓦莱塔'],
+    斯洛伐克: ['SK', 'SVK', 'BTS', '斯洛伐克', 'Slovakia', 'Bratislava', '布拉迪斯拉发'],
+    斯洛文尼亚: ['SI', 'SVN', 'LJU', '斯洛文尼亚', 'Slovenia', 'Ljubljana', '卢布尔雅那'],
+    克罗地亚: ['HR', 'HRV', 'ZAG', '克罗地亚', 'Croatia', 'Zagreb', '萨格勒布'],
+    拉脱维亚: ['LV', 'LVA', 'RIX', '拉脱维亚', 'Latvia', 'Riga', '里加'],
+    立陶宛: ['LT', 'LTU', 'VNO', '立陶宛', 'Lithuania', 'Vilnius', '维尔纽斯'],
+    爱沙尼亚: ['EE', 'EST', 'TLL', '爱沙尼亚', 'Estonia', 'Tallinn', '塔林'],
+    塞浦路斯: ['CY', 'CYP', 'LCA', '塞浦路斯', 'Cyprus', 'Nicosia', '尼科西亚'],
+    列支敦士登: ['LI', 'LIE', '列支敦士登', 'Liechtenstein', 'Vaduz', '瓦杜兹'],
+    阿尔巴尼亚: ['AL', 'ALB', 'TIA', '阿尔巴尼亚', 'Albania', 'Tirana', '地拉那'],
+    安道尔: ['AD', 'AND', '安道尔', 'Andorra', 'Andorra la Vella', '安道尔城'],
+    白俄罗斯: ['BY', 'BLR', 'MSQ', '白俄罗斯', 'Belarus', 'Minsk', '明斯克'],
+    波黑: [
+        'BA',
+        'BIH',
+        'SJJ',
+        '波黑',
+        '波斯尼亚',
+        'Bosnia',
+        'Bosnia and Herzegovina',
+        'Sarajevo',
+        '萨拉热窝',
+    ],
+    摩尔多瓦: ['MD', 'MDA', 'KIV', '摩尔多瓦', 'Moldova', 'Chisinau', 'Chișinău', '基希讷乌'],
+    摩纳哥: ['MC', 'MCO', '摩纳哥', 'Monaco', 'Monte Carlo', '蒙特卡洛'],
+    黑山: ['ME', 'MNE', 'TGD', '黑山', 'Montenegro', 'Podgorica', '波德戈里察'],
+    北马其顿: [
+        'MK',
+        'MKD',
+        'SKP',
+        '北马其顿',
+        'North Macedonia',
+        'Macedonia',
+        'Skopje',
+        '斯科普里',
+    ],
+    塞尔维亚: ['RS', 'SRB', 'BEG', '塞尔维亚', 'Serbia', 'Belgrade', '贝尔格莱德'],
+    乌克兰: ['UA', 'UKR', 'KBP', '乌克兰', 'Ukraine', 'Kyiv', 'Kiev', '基辅'],
+    科索沃: ['XK', 'XKS', 'PRN', '科索沃', 'Kosovo', 'Pristina', '普里什蒂纳'],
+    圣马力诺: ['SM', 'SMR', '圣马力诺', 'San Marino'],
+    梵蒂冈: ['VA', 'VAT', '梵蒂冈', 'Vatican', 'Vatican City', '梵蒂冈城'],
+    格鲁吉亚: ['GE', 'GEO', 'TBS', '格鲁吉亚', 'Georgia', 'Tbilisi', '第比利斯'],
+    亚美尼亚: ['AM', 'ARM', 'EVN', '亚美尼亚', 'Armenia', 'Yerevan', '埃里温'],
+    阿塞拜疆: ['AZ', 'AZE', 'GYD', '阿塞拜疆', 'Azerbaijan', 'Baku', '巴库'],
+    比利时: [
+        'BE',
+        'BEL',
+        'BRU',
+        '比利时',
+        'Belgium',
+        'Brussels',
+        '安特卫普',
+        '布鲁塞尔',
+        'Antwerp',
+    ],
 };
 
 /**
  * [新增] 地区 Emoji 映射表
  */
 export const REGION_EMOJI = {
-    '香港': '🇭🇰',
-    '台湾': '🇨🇳',
-    '新加坡': '🇸🇬',
-    '日本': '🇯🇵',
-    '美国': '🇺🇸',
-    '韩国': '🇰🇷',
-    '英国': '🇬🇧',
-    '德国': '🇩🇪',
-    '法国': '🇫🇷',
-    '加拿大': '🇨🇦',
-    '澳大利亚': '🇦🇺',
-    '荷兰': '🇳🇱',
-    '俄罗斯': '🇷🇺',
-    '印度': '🇮🇳',
-    '土耳其': '🇹🇷',
-    '孟加拉': '🇧🇩',
-    '巴基斯坦': '🇵🇰',
-    '马来西亚': '🇲🇾',
-    '泰国': '🇹🇭',
-    '越南': '🇻🇳',
-    '菲律宾': '🇵🇭',
-    '印尼': '🇮🇩',
-    '文莱': '🇧🇳',
-    '柬埔寨': '🇰🇭',
-    '老挝': '🇱🇦',
-    '缅甸': '🇲🇲',
-    '瑞士': '🇨🇭',
-    '意大利': '🇮🇹',
-    '西班牙': '🇪🇸',
-    '巴西': '🇧🇷',
-    '阿根廷': '🇦🇷',
-    '墨西哥': '🇲🇽',
-    '哥伦比亚': '🇨🇴',
-    '秘鲁': '🇵🇪',
-    '南非': '🇿🇦',
-    '埃及': '🇪🇬',
-    '以色列': '🇮🇱',
-    '阿联酋': '🇦🇪',
-    '阿曼': '🇴🇲',
-    '沙特': '🇸🇦',
-    '波兰': '🇵🇱',
-    '捷克': '🇨🇿',
-    '匈牙利': '🇭🇺',
-    '罗马尼亚': '🇷🇴',
-    '希腊': '🇬🇷',
-    '葡萄牙': '🇵🇹',
-    '瑞典': '🇸🇪',
-    '挪威': '🇳🇴',
-    '丹麦': '🇩🇰',
-    '芬兰': '🇫🇮',
-    '奥地利': '🇦🇹',
-    '爱尔兰': '🇮🇪',
-    '冰岛': '🇮🇸',
-    '卢森堡': '🇱🇺',
-    '马耳他': '🇲🇹',
-    '斯洛伐克': '🇸🇰',
-    '斯洛文尼亚': '🇸🇮',
-    '克罗地亚': '🇭🇷',
-    '拉脱维亚': '🇱🇻',
-    '立陶宛': '🇱🇹',
-    '爱沙尼亚': '🇪🇪',
-    '塞浦路斯': '🇨🇾',
-    '列支敦士登': '🇱🇮',
-    '阿尔巴尼亚': '🇦🇱',
-    '安道尔': '🇦🇩',
-    '白俄罗斯': '🇧🇾',
-    '波黑': '🇧🇦',
-    '摩尔多瓦': '🇲🇩',
-    '摩纳哥': '🇲🇨',
-    '黑山': '🇲🇪',
-    '北马其顿': '🇲🇰',
-    '塞尔维亚': '🇷🇸',
-    '乌克兰': '🇺🇦',
-    '科索沃': '🇽🇰',
-    '圣马力诺': '🇸🇲',
-    '梵蒂冈': '🇻🇦',
-    '格鲁吉亚': '🇬🇪',
-    '亚美尼亚': '🇦🇲',
-    '阿塞拜疆': '🇦🇿',
-    '比利时': '🇧🇪',
-    '其他': '🌍'
+    香港: '🇭🇰',
+    台湾: '🇨🇳',
+    新加坡: '🇸🇬',
+    日本: '🇯🇵',
+    美国: '🇺🇸',
+    韩国: '🇰🇷',
+    英国: '🇬🇧',
+    德国: '🇩🇪',
+    法国: '🇫🇷',
+    加拿大: '🇨🇦',
+    澳大利亚: '🇦🇺',
+    荷兰: '🇳🇱',
+    俄罗斯: '🇷🇺',
+    印度: '🇮🇳',
+    土耳其: '🇹🇷',
+    孟加拉: '🇧🇩',
+    巴基斯坦: '🇵🇰',
+    马来西亚: '🇲🇾',
+    泰国: '🇹🇭',
+    越南: '🇻🇳',
+    菲律宾: '🇵🇭',
+    印尼: '🇮🇩',
+    文莱: '🇧🇳',
+    柬埔寨: '🇰🇭',
+    老挝: '🇱🇦',
+    缅甸: '🇲🇲',
+    瑞士: '🇨🇭',
+    意大利: '🇮🇹',
+    西班牙: '🇪🇸',
+    巴西: '🇧🇷',
+    阿根廷: '🇦🇷',
+    墨西哥: '🇲🇽',
+    哥伦比亚: '🇨🇴',
+    秘鲁: '🇵🇪',
+    南非: '🇿🇦',
+    埃及: '🇪🇬',
+    以色列: '🇮🇱',
+    阿联酋: '🇦🇪',
+    阿曼: '🇴🇲',
+    沙特: '🇸🇦',
+    波兰: '🇵🇱',
+    捷克: '🇨🇿',
+    匈牙利: '🇭🇺',
+    罗马尼亚: '🇷🇴',
+    希腊: '🇬🇷',
+    葡萄牙: '🇵🇹',
+    瑞典: '🇸🇪',
+    挪威: '🇳🇴',
+    丹麦: '🇩🇰',
+    芬兰: '🇫🇮',
+    奥地利: '🇦🇹',
+    爱尔兰: '🇮🇪',
+    冰岛: '🇮🇸',
+    卢森堡: '🇱🇺',
+    马耳他: '🇲🇹',
+    斯洛伐克: '🇸🇰',
+    斯洛文尼亚: '🇸🇮',
+    克罗地亚: '🇭🇷',
+    拉脱维亚: '🇱🇻',
+    立陶宛: '🇱🇹',
+    爱沙尼亚: '🇪🇪',
+    塞浦路斯: '🇨🇾',
+    列支敦士登: '🇱🇮',
+    阿尔巴尼亚: '🇦🇱',
+    安道尔: '🇦🇩',
+    白俄罗斯: '🇧🇾',
+    波黑: '🇧🇦',
+    摩尔多瓦: '🇲🇩',
+    摩纳哥: '🇲🇨',
+    黑山: '🇲🇪',
+    北马其顿: '🇲🇰',
+    塞尔维亚: '🇷🇸',
+    乌克兰: '🇺🇦',
+    科索沃: '🇽🇰',
+    圣马力诺: '🇸🇲',
+    梵蒂冈: '🇻🇦',
+    格鲁吉亚: '🇬🇪',
+    亚美尼亚: '🇦🇲',
+    阿塞拜疆: '🇦🇿',
+    比利时: '🇧🇪',
+    其他: '🌍',
 };
 
 function normalizeBase64(input) {
-    let s = String(input || '').trim().replace(/\s+/g, '');
+    let s = String(input || '')
+        .trim()
+        .replace(/\s+/g, '');
     if (!s) return '';
     if (s.includes('%')) {
         try {
@@ -303,7 +601,7 @@ export function getRegionKeywords(region) {
  * @returns {string} 对应的 Emoji，如果未找到则返回空字符串
  */
 export function getRegionEmoji(region) {
-    return REGION_EMOJI[region] || '';
+    return REGION_EMOJI[region] || (region === '其他' || !region ? '🌍' : '');
 }
 
 /**
@@ -340,7 +638,7 @@ export function parseNodeInfo(nodeUrl) {
             protocol: 'unknown',
             name: '未命名节点',
             region: '其他',
-            url: nodeUrl
+            url: nodeUrl,
         };
     }
 
@@ -389,7 +687,8 @@ export function parseNodeInfo(nodeUrl) {
     try {
         if (protocol === 'vmess') {
             const base64Part = nodeUrl.replace('vmess://', '');
-            if (base64Part && !base64Part.includes('@')) { // 排除可能是明文的情况(虽然vmess少见)
+            if (base64Part && !base64Part.includes('@')) {
+                // 排除可能是明文的情况(虽然vmess少见)
                 try {
                     // 处理 URL-safe Base64 字符
                     let safeBody = base64Part.replace(/-/g, '+').replace(/_/g, '/');
@@ -397,7 +696,7 @@ export function parseNodeInfo(nodeUrl) {
                     while (safeBody.length % 4) {
                         safeBody += '=';
                     }
-                    const jsonStr = atob(safeBody); // 使用 decodeURIComponent(escape(atob(safeBody))) 处理中文? 
+                    const jsonStr = atob(safeBody); // 使用 decodeURIComponent(escape(atob(safeBody))) 处理中文?
                     // 不, atob 解码后通常是 UTF-8 字节流乱码 if directly used as string for Chinese
                     // 需要用 TextDecoder
                     const binaryString = atob(safeBody);
@@ -460,7 +759,8 @@ export function parseNodeInfo(nodeUrl) {
                 if (decoded) {
                     // 解析 server:port:protocol:method:obfs:password_base64/?params
                     // server 可能是 IPv6 [::1]
-                    let ssrServer = '', ssrPort = '';
+                    let ssrServer = '',
+                        ssrPort = '';
                     if (decoded.startsWith('[')) {
                         // IPv6 格式: [ipv6]:port:...
                         const closeBracket = decoded.indexOf(']');
@@ -483,7 +783,12 @@ export function parseNodeInfo(nodeUrl) {
 
                     // 提取 remarks 名称（SSR 名称在 Base64 编码的 remarks 参数中）
                     const slashQ = decoded.indexOf('/?');
-                    const paramStart = slashQ !== -1 ? slashQ + 2 : (decoded.indexOf('?') !== -1 ? decoded.indexOf('?') + 1 : -1);
+                    const paramStart =
+                        slashQ !== -1
+                            ? slashQ + 2
+                            : decoded.indexOf('?') !== -1
+                              ? decoded.indexOf('?') + 1
+                              : -1;
                     if (paramStart !== -1) {
                         const paramStr = decoded.substring(paramStart);
                         const remarksMatch = paramStr.match(/(?:^|&)remarks=([^&]*)/);
@@ -509,50 +814,50 @@ export function parseNodeInfo(nodeUrl) {
                         }
                     }
                 }
-} catch (e) {
-console.debug('[GeoUtils] SSR decode failed:', e);
-}
-} else if (protocol === 'wireguard') {
-// WireGuard 格式: wireguard://privatekey@server:port?params#name
-let body = nodeUrl.substring('wireguard://'.length);
+            } catch (e) {
+                console.debug('[GeoUtils] SSR decode failed:', e);
+            }
+        } else if (protocol === 'wireguard') {
+            // WireGuard 格式: wireguard://privatekey@server:port?params#name
+            let body = nodeUrl.substring('wireguard://'.length);
 
-// 提取名称
-const hIndex = body.indexOf('#');
-if (hIndex !== -1) {
-try {
-nodeName = decodeURIComponent(body.substring(hIndex + 1));
-} catch (e) {
-nodeName = body.substring(hIndex + 1);
-}
-body = body.substring(0, hIndex);
-}
+            // 提取名称
+            const hIndex = body.indexOf('#');
+            if (hIndex !== -1) {
+                try {
+                    nodeName = decodeURIComponent(body.substring(hIndex + 1));
+                } catch (e) {
+                    nodeName = body.substring(hIndex + 1);
+                }
+                body = body.substring(0, hIndex);
+            }
 
-// 提取服务器和端口
-const atIndex = body.lastIndexOf('@');
-if (atIndex !== -1) {
-const serverPart = body.substring(atIndex + 1);
-const qIndex = serverPart.indexOf('?');
-const addrPart = qIndex !== -1 ? serverPart.substring(0, qIndex) : serverPart;
+            // 提取服务器和端口
+            const atIndex = body.lastIndexOf('@');
+            if (atIndex !== -1) {
+                const serverPart = body.substring(atIndex + 1);
+                const qIndex = serverPart.indexOf('?');
+                const addrPart = qIndex !== -1 ? serverPart.substring(0, qIndex) : serverPart;
 
-// 处理 IPv6
-if (addrPart.startsWith('[')) {
-const closeBracket = addrPart.indexOf(']');
-if (closeBracket !== -1) {
-server = addrPart.substring(1, closeBracket);
-const afterBracket = addrPart.substring(closeBracket + 1);
-if (afterBracket.startsWith(':')) {
-port = afterBracket.substring(1);
-}
-}
-} else {
-const parts = addrPart.split(':');
-if (parts.length >= 2) {
-server = parts[0];
-port = parts[1];
-}
-}
-}
-} else {
+                // 处理 IPv6
+                if (addrPart.startsWith('[')) {
+                    const closeBracket = addrPart.indexOf(']');
+                    if (closeBracket !== -1) {
+                        server = addrPart.substring(1, closeBracket);
+                        const afterBracket = addrPart.substring(closeBracket + 1);
+                        if (afterBracket.startsWith(':')) {
+                            port = afterBracket.substring(1);
+                        }
+                    }
+                } else {
+                    const parts = addrPart.split(':');
+                    if (parts.length >= 2) {
+                        server = parts[0];
+                        port = parts[1];
+                    }
+                }
+            }
+        } else {
             // 通用格式: protocol://user@host:port... 或 protocol://host:port...
             // vless, trojan, hysteria2, socks5, http 等
             // 去掉 protocol://
@@ -564,7 +869,7 @@ port = parts[1];
             if (qIndex !== -1) body = body.substring(0, qIndex);
 
             const atIndex = body.lastIndexOf('@');
-            let serverPart = (atIndex !== -1) ? body.substring(atIndex + 1) : body;
+            let serverPart = atIndex !== -1 ? body.substring(atIndex + 1) : body;
 
             // [新增] 检测 Base64 编码的用户信息（某些非标准 VLESS URL）
             // 格式：vless://Base64(auto:uuid@host:port)?params
@@ -586,7 +891,9 @@ port = parts[1];
                     }
                 } catch (e) {
                     // Base64 解码失败，继续使用原逻辑
-                    console.debug('[GeoUtils] VLESS base64 decode attempt failed (expected for standard format)');
+                    console.debug(
+                        '[GeoUtils] VLESS base64 decode attempt failed (expected for standard format)'
+                    );
                 }
             }
 
@@ -621,7 +928,7 @@ port = parts[1];
         region,
         server,
         port,
-        url: nodeUrl
+        url: nodeUrl,
     };
 }
 
@@ -634,7 +941,7 @@ export function calculateRegionStats(nodes) {
     const stats = {};
     const total = nodes.length;
 
-    nodes.forEach(node => {
+    nodes.forEach((node) => {
         const region = extractNodeRegion(node.name || '');
         stats[region] = (stats[region] || 0) + 1;
     });
@@ -643,7 +950,7 @@ export function calculateRegionStats(nodes) {
     for (const [region, count] of Object.entries(stats)) {
         stats[region] = {
             count,
-            percentage: Math.round((count / total) * 100)
+            percentage: Math.round((count / total) * 100),
         };
     }
 

@@ -1,9 +1,10 @@
 import { parseNodeList } from '../utils/node-parser.js';
 import { fetchWithRetry } from '../../services/fetch-utils.js';
+import { buildFetchProxyUrl } from '../../utils/fetch-proxy-utils.js';
 import {
     filterNodeObjects,
-    buildRuleSet,
-    encodeArrayBufferToBase64
+    parseFilterRuleText,
+    encodeArrayBufferToBase64,
 } from '../utils/node-cleaner.js';
 
 /**
@@ -18,26 +19,48 @@ import {
  * @param {boolean} plusAsSpace - 是否将名称中的 + 视为空格
  * @returns {Promise<Object>} 节点获取结果
  */
-export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, customUserAgent = null, debug = false, excludeRules = '', fetchProxy = null, skipCertVerify = false, plusAsSpace = false) {
+export async function fetchSubscriptionNodes(
+    url,
+    subscriptionName,
+    userAgent,
+    customUserAgent = null,
+    debug = false,
+    excludeRules = '',
+    fetchProxy = null,
+    skipCertVerify = false,
+    plusAsSpace = false,
+    enableNodeCache = false
+) {
     // 自动检测调试 Token
     const shouldDebug = debug;
 
     try {
-        const effectiveUserAgent = customUserAgent && customUserAgent.trim() !== ''
-            ? customUserAgent
-            : userAgent;
+        const effectiveUserAgent =
+            customUserAgent && customUserAgent.trim() !== '' ? customUserAgent : userAgent;
 
         // 当配置了 fetchProxy 时，使用代理拉取订阅
         let requestUrl = url;
+
+        // 只有开启保护性缓存节点时才加时间戳绕过强缓存 (如 Cloudflare Edge Cache)
+        if (enableNodeCache) {
+            try {
+                const parsedUrl = new URL(requestUrl);
+                parsedUrl.searchParams.set('_t', Date.now().toString());
+                requestUrl = parsedUrl.toString();
+            } catch (e) {
+                requestUrl += (requestUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+            }
+        }
+
         if (fetchProxy && typeof fetchProxy === 'string' && fetchProxy.trim()) {
-            requestUrl = fetchProxy.trim() + encodeURIComponent(url);
+            requestUrl = buildFetchProxyUrl(fetchProxy, url, effectiveUserAgent);
         }
 
         // 使用统一的 Fetch 工具，复用重试逻辑
         const response = await fetchWithRetry(requestUrl, {
             headers: { 'User-Agent': effectiveUserAgent },
-            redirect: "follow",
-            ...(skipCertVerify ? { cf: { insecureSkipVerify: true } } : {})
+            redirect: 'follow',
+            ...(skipCertVerify ? { cf: { insecureSkipVerify: true } } : {}),
         });
 
         if (!response.ok) {
@@ -46,7 +69,7 @@ export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, c
                 url,
                 success: false,
                 nodes: [],
-                error: `HTTP ${response.status}: ${response.statusText}`
+                error: `HTTP ${response.status}: ${response.statusText}`,
             };
         }
 
@@ -72,7 +95,7 @@ export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, c
             url,
             success: true,
             nodes: parsedNodes,
-            error: null
+            error: null,
         };
     } catch (e) {
         if (shouldDebug) {
@@ -83,33 +106,19 @@ export async function fetchSubscriptionNodes(url, subscriptionName, userAgent, c
             url,
             success: false,
             nodes: [],
-            error: e.message
+            error: e.message,
         };
     }
 }
 
 /**
  * 应用过滤规则 (使用 node-cleaner 的重构逻辑)
- * @param {Array} nodes 
- * @param {string} ruleText 
+ * @param {Array} nodes
+ * @param {string} ruleText
  */
 function applyExcludeRulesToNodes(nodes, ruleText) {
     if (!ruleText || !ruleText.trim()) return nodes;
-    const lines = ruleText
-        .split('\n')
-        .map(line => line.trim())
-        .filter(Boolean);
-
-    if (lines.length === 0) return nodes;
-
-    const dividerIndex = lines.findIndex(line => line === '---');
-    // 如果没有分隔符，默认全是 exclude
-    const includeLines = dividerIndex === -1 ? [] : lines.slice(dividerIndex + 1);
-    const excludeLines = dividerIndex === -1 ? lines : lines.slice(0, dividerIndex);
-
-    // 使用 node-cleaner 中导出的 buildRuleSet
-    const includeRules = buildRuleSet(includeLines, true);
-    const excludeRules = buildRuleSet(excludeLines);
+    const { includeRules, excludeRules } = parseFilterRuleText(ruleText);
 
     let resultNodes = nodes;
 

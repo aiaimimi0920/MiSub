@@ -1,7 +1,9 @@
 export {
     convertClashProxyToUrl,
     batchConvertClashProxies,
+    parseClientConfig,
+    parseLoonConfig,
     validateGeneratedUrl,
     parseSurgeConfig,
-    parseQuantumultXConfig
+    parseQuantumultXConfig,
 } from './protocols/index.js';

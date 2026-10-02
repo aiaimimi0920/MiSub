@@ -5,17 +5,104 @@
 
 // [修复] 使用正确的相对路径引用 modules/utils 下的 geo-utils
 import { extractNodeRegion, getRegionEmoji } from '../modules/utils/geo-utils.js';
+import { extractNodeMetadata } from '../modules/utils/metadata-extractor.js';
 
 /**
  * 节点协议正则表达式
  */
-export const NODE_PROTOCOL_REGEX = /^(ss|ssr|vmess|vless|trojan|hysteria2?|hy|hy2|tuic|snell|anytls|socks5|socks|wireguard):\/\//g;
+export const NODE_PROTOCOL_REGEX =
+    /^(ss|ssr|vmess|vless|trojan|hysteria2?|hy|hy2|tuic|snell|anytls|socks5|socks|wireguard|naive\+https?|naive\+quic):\/\//i;
+
+/**
+ * 判断代理是否指向本机/未指定地址。
+ * 这类地址不能作为订阅中的真实出口节点。
+ */
+export function isLocalProxyEndpoint(proxy) {
+    let host = '';
+
+    if (proxy && typeof proxy === 'object') {
+        host = proxy.server || proxy.host || '';
+    } else if (typeof proxy === 'string') {
+        try {
+            host = new URL(proxy).hostname;
+        } catch {
+            const match = proxy.match(/@(?:\[([^\]]+)\]|([^:?#/]+))/);
+            host = match?.[1] || match?.[2] || '';
+        }
+    }
+
+    host = String(host)
+        .trim()
+        .toLowerCase()
+        .replace(/^\[|\]$/g, '')
+        .replace(/\.$/, '');
+    return (
+        host === 'localhost' ||
+        host === '::1' ||
+        host === '::' ||
+        host === '0.0.0.0' ||
+        /^127(?:\.\d{1,3}){3}$/.test(host) ||
+        /^::ffff:127(?:\.\d{1,3}){3}$/.test(host)
+    );
+}
+
+function normalizeBase64(input) {
+    let normalized = String(input || '')
+        .replace(/\s+/g, '')
+        .replace(/-/g, '+')
+        .replace(/_/g, '/');
+    const padding = normalized.length % 4;
+    if (padding) normalized += '='.repeat(4 - padding);
+    return normalized;
+}
+
+function base64UrlSafeEncodeUtf8(str) {
+    return btoa(unescape(encodeURIComponent(str)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+}
+
+function base64UrlSafeDecodeUtf8(str) {
+    return decodeURIComponent(escape(atob(normalizeBase64(str))));
+}
+
+function updateSsrRemarks(link, updater) {
+    if (!link || !link.toLowerCase().startsWith('ssr://')) return link;
+    try {
+        const rawPayload = link.substring('ssr://'.length).split('#')[0];
+        const decoded = base64UrlSafeDecodeUtf8(rawPayload);
+        const queryMarker = '/?';
+        const queryIndex = decoded.indexOf(queryMarker);
+        if (queryIndex === -1) return link;
+
+        const mainPart = decoded.substring(0, queryIndex + queryMarker.length);
+        const params = new URLSearchParams(decoded.substring(queryIndex + queryMarker.length));
+        const oldRemarks = params.get('remarks')
+            ? base64UrlSafeDecodeUtf8(params.get('remarks'))
+            : '';
+        const newRemarks = updater(oldRemarks);
+        if (!newRemarks || newRemarks === oldRemarks)
+            return `ssr://${base64UrlSafeEncodeUtf8(decoded)}`;
+        params.set('remarks', base64UrlSafeEncodeUtf8(newRemarks));
+        return `ssr://${base64UrlSafeEncodeUtf8(mainPart + params.toString())}`;
+    } catch (e) {
+        return link;
+    }
+}
 
 /**
  * 为节点名称添加前缀
  */
 export function prependNodeName(link, prefix) {
     if (!prefix) return link;
+
+    if (link?.toLowerCase?.().startsWith('ssr://')) {
+        return updateSsrRemarks(link, (originalName) => {
+            if (originalName.startsWith(prefix)) return originalName;
+            return originalName ? `${prefix} - ${originalName}` : prefix;
+        });
+    }
 
     const appendToFragment = (baseLink, namePrefix) => {
         const hashIndex = baseLink.lastIndexOf('#');
@@ -55,7 +142,7 @@ export function prependNodeName(link, prefix) {
             const newBase64Part = btoa(unescape(encodeURIComponent(newJsonString)));
             return 'vmess://' + newBase64Part;
         } catch (e) {
-            console.error("为 vmess 节点添加名称前缀失败，将回退到通用方法。", e);
+            console.error('为 vmess 节点添加名称前缀失败，将回退到通用方法。', e);
             return appendToFragment(link, prefix);
         }
     }
@@ -74,30 +161,36 @@ export function extractRegionFromNodeName(nodeName) {
  */
 export function addFlagEmoji(link) {
     if (!link) return link;
-
     const appendEmoji = (name) => {
-        // [修复] 先将台湾旗帜替换为中国国旗
-        let processedName = name.replace(/🇹🇼/g, '🇨🇳');
+        if (!name) return name;
 
-        const region = extractNodeRegion(processedName);
-        const emoji = getRegionEmoji(region);
-        if (!emoji) return processedName;
-        if (processedName.includes(emoji)) return processedName;
-        return `${emoji} ${processedName}`;
+        // 更全面的 Emoji 检测正则 (涵盖国旗、地区符号等)
+        const HAS_EMOJI_REGEX =
+            /[\u{1F1E6}-\u{1F1FF}]{2}|\u{1F3F4}[\u{E0061}-\u{E007A}]{2,}\u{E007F}/u;
+        if (HAS_EMOJI_REGEX.test(name)) return name;
+
+        const metadata = extractNodeMetadata(name);
+        if (!metadata.flag) return name;
+
+        return `${metadata.flag} ${name}`;
     };
+
+    if (link.toLowerCase().startsWith('ssr://')) {
+        return updateSsrRemarks(link, appendEmoji);
+    }
 
     if (link.startsWith('vmess://')) {
         try {
             const base64Part = link.substring('vmess://'.length);
-            const binaryString = atob(base64Part);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            const jsonString = new TextDecoder('utf-8').decode(bytes);
-            const nodeConfig = JSON.parse(jsonString);
+            const binaryString = atob(normalizeBase64(base64Part));
+            const decodedStr = new TextDecoder('utf-8').decode(
+                new Uint8Array(Array.from(binaryString, (c) => c.charCodeAt(0)))
+            );
+            const nodeConfig = JSON.parse(decodedStr);
             if (nodeConfig.ps) {
-                nodeConfig.ps = appendEmoji(nodeConfig.ps);
+                const updatedPs = appendEmoji(nodeConfig.ps);
+                if (updatedPs === nodeConfig.ps) return link;
+                nodeConfig.ps = updatedPs;
                 const newJsonString = JSON.stringify(nodeConfig);
                 const newBase64Part = btoa(unescape(encodeURIComponent(newJsonString)));
                 return 'vmess://' + newBase64Part;
@@ -108,14 +201,40 @@ export function addFlagEmoji(link) {
         }
     } else {
         const hashIndex = link.lastIndexOf('#');
-        if (hashIndex === -1) return link;
-        try {
-            const originalName = decodeURIComponent(link.substring(hashIndex + 1));
-            const newName = appendEmoji(originalName);
-            return link.substring(0, hashIndex + 1) + encodeURIComponent(newName);
-        } catch (e) {
-            return link;
+        let originalName = '';
+        let basePart = link;
+
+        if (hashIndex !== -1) {
+            basePart = link.substring(0, hashIndex);
+            const rawName = link.substring(hashIndex + 1);
+            try {
+                // [关键修复] VLESS/Trojan 节点名通常被层层编码，这里需要确保解码透彻
+                originalName = decodeURIComponent(rawName);
+                if (originalName.includes('%')) {
+                    originalName = decodeURIComponent(originalName);
+                }
+            } catch (e) {
+                originalName = rawName;
+            }
+        } else {
+            // 没有 # 片段，根据 URL 结构提取一个逻辑名称以便注入国旗
+            const protocolMatch = link.match(/^(.*?):\/\//);
+            if (protocolMatch) {
+                const protocol = protocolMatch[1];
+                const rest = link.substring(protocol.length + 3);
+                const atIdx = rest.lastIndexOf('@');
+                const hostPortPart = (atIdx !== -1 ? rest.substring(atIdx + 1) : rest).split(
+                    /[?#]/
+                )[0];
+                originalName = hostPortPart.split(':')[0] || 'Node';
+            }
         }
+
+        if (!originalName) return link;
+        const newName = appendEmoji(originalName);
+        if (newName === originalName && hashIndex === -1) return link;
+
+        return `${basePart}#${encodeURIComponent(newName)}`;
     }
 }
 
@@ -130,7 +249,7 @@ export function removeFlagEmoji(link) {
             /\u{1F3F4}[\u{E0061}-\u{E007A}]{2,}\u{E007F}/gu, // 标签序列旗帜
             /\u{1F3F3}\uFE0F?\u200D\u{1F308}/gu, // 彩虹旗
             /\u{1F3F3}\uFE0F?\u200D\u{26A7}/gu, // 跨性别旗
-            /[\u{1F3F1}\u{1F3F3}\u{1F3F4}\u{1F6A9}\u{1F3C1}\u{1F38C}]/gu // 常见旗帜符号
+            /[\u{1F3F1}\u{1F3F3}\u{1F3F4}\u{1F6A9}\u{1F3C1}\u{1F38C}]/gu, // 常见旗帜符号
         ];
         for (const pattern of patterns) {
             cleaned = cleaned.replace(pattern, '');
@@ -148,7 +267,11 @@ export function removeFlagEmoji(link) {
             while (base64Part.length % 4 !== 0) {
                 base64Part += '=';
             }
-            return JSON.parse(new TextDecoder('utf-8').decode(Uint8Array.from(atob(base64Part), c => c.charCodeAt(0))));
+            return JSON.parse(
+                new TextDecoder('utf-8').decode(
+                    Uint8Array.from(atob(base64Part), (c) => c.charCodeAt(0))
+                )
+            );
         } catch (e) {
             return null;
         }
@@ -230,16 +353,37 @@ export function fixNodeUrlEncoding(nodeUrl, options = {}) {
         });
 
         // 解码 query 中的常用字段
-        nodeUrl = nodeUrl.replace(/([?&](?:obfs-password|auth|password)=)([^&]+)/gi, (match, prefix, value) => {
-            const decoded = safeDecode(value);
-            return shouldKeepRaw(decoded) ? match : `${prefix}${decoded}`;
-        });
+        nodeUrl = nodeUrl.replace(
+            /([?&](?:obfs-password|auth|password)=)([^&]+)/gi,
+            (match, prefix, value) => {
+                const decoded = safeDecode(value);
+                return shouldKeepRaw(decoded) ? match : `${prefix}${decoded}`;
+            }
+        );
 
         return normalizeFragment(nodeUrl);
     }
 
+    // 1.1 Snell 参数兼容处理（移除 SubConverter 不识别的字段）
+    if (nodeUrl.startsWith('snell://')) {
+        try {
+            const urlObj = new URL(nodeUrl);
+            if (urlObj.searchParams.has('ecn')) {
+                urlObj.searchParams.delete('ecn');
+            }
+            const rebuilt = urlObj.toString();
+            return normalizeFragment(rebuilt);
+        } catch (e) {
+            return normalizeFragment(nodeUrl);
+        }
+    }
+
     // 2. 其他协议的 Base64 修复逻辑
-    if (!nodeUrl.startsWith('ss://') && !nodeUrl.startsWith('vless://') && !nodeUrl.startsWith('trojan://')) {
+    if (
+        !nodeUrl.startsWith('ss://') &&
+        !nodeUrl.startsWith('vless://') &&
+        !nodeUrl.startsWith('trojan://')
+    ) {
         return nodeUrl;
     }
 
@@ -268,7 +412,7 @@ export function fixNodeUrlEncoding(nodeUrl, options = {}) {
 /**
  * 净化节点名称以兼容 YAML Flow Style
  * 防止 Subconverter 生成的 YAML 包含非法起始字符（如 *）
- * @param {string} nodeUrl 
+ * @param {string} nodeUrl
  * @returns {string} processedNodeUrl
  */
 export function sanitizeNodeForYaml(nodeUrl) {
@@ -282,7 +426,8 @@ export function sanitizeNodeForYaml(nodeUrl) {
         // We replace them with full-width equivalents or '★' for *
         const unsafeStartRegex = /^([*&!\[\]\{\},:?#%|>@\-])/;
         if (unsafeStartRegex.test(name)) {
-            return name.replace(/^[*]/, '★')
+            return name
+                .replace(/^[*]/, '★')
                 .replace(/^&/, '＆')
                 .replace(/^!/, '！')
                 .replace(/^\[/, '【')
@@ -313,7 +458,9 @@ export function sanitizeNodeForYaml(nodeUrl) {
             while (base64Part.length % 4 !== 0) {
                 base64Part += '=';
             }
-            const jsonString = new TextDecoder('utf-8').decode(Uint8Array.from(atob(base64Part), c => c.charCodeAt(0)));
+            const jsonString = new TextDecoder('utf-8').decode(
+                Uint8Array.from(atob(base64Part), (c) => c.charCodeAt(0))
+            );
             const nodeConfig = JSON.parse(jsonString);
 
             if (nodeConfig.ps) {

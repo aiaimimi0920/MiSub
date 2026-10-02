@@ -3,24 +3,25 @@ import {
     fixNodeUrlEncoding,
     fixSSEncoding,
     buildRuleSet,
+    parseFilterRuleText,
     filterNodeObjects,
-    applyManualNodeName
+    applyManualNodeName,
 } from '../../functions/modules/utils/node-cleaner.js';
 
 describe('Node Cleaner Utils', () => {
-
     describe('fixNodeUrlEncoding', () => {
         it('should decoding double-encoded vless/trojan URLs', () => {
             // vless://uuid@host:port?security=tls&headerType=none#%25E6%25B5%258B%25E8%25AF%2595%25E8%258A%2582%25E7%2582%25B9
             // Expected: ...#测试节点
-            const doubleEncoded = 'vless://uuid@host:443?security=tls#%25E6%25B5%258B%25E8%25AF%2595';
+            const doubleEncoded =
+                'vless://uuid@host:443?security=tls#%25E6%25B5%258B%25E8%25AF%2595';
             const fixed = fixNodeUrlEncoding(doubleEncoded);
             expect(decodeURIComponent(new URL(fixed).hash.substring(1))).toBe('测试');
         });
 
         it('should handle special characters in hysteria2 auth', () => {
             const original = 'hysteria2://user%21%40%23:pass@host:443';
-            // If encoded, ensure it stays valid. 
+            // If encoded, ensure it stays valid.
             // The fixer logic tries to fix common mis-encodings.
             const fixed = fixNodeUrlEncoding(original);
             expect(fixed).toContain('hysteria2://');
@@ -39,9 +40,21 @@ describe('Node Cleaner Utils', () => {
 
     describe('applyManualNodeName', () => {
         it('should rename vmess with base64 json', () => {
-            const config = { v: "2", ps: "old", add: "1.1.1.1", port: 443, id: "uuid", aid: 0, net: "tcp", type: "none", host: "", path: "", tls: "" };
+            const config = {
+                v: '2',
+                ps: 'old',
+                add: '1.1.1.1',
+                port: 443,
+                id: 'uuid',
+                aid: 0,
+                net: 'tcp',
+                type: 'none',
+                host: '',
+                path: '',
+                tls: '',
+            };
             const vmessLink = 'vmess://' + btoa(JSON.stringify(config));
-            const newName = "New Name";
+            const newName = 'New Name';
 
             const renamed = applyManualNodeName(vmessLink, newName);
             const newConfig = JSON.parse(atob(renamed.substring(8)));
@@ -60,7 +73,7 @@ describe('Node Cleaner Utils', () => {
             { protocol: 'vmess', name: 'US Node 1' },
             { protocol: 'ss', name: 'HK Node 2' },
             { protocol: 'trojan', name: 'JP Node 3' },
-            { protocol: 'vless', name: 'US Premium' }
+            { protocol: 'vless', name: 'US Premium' },
         ];
 
         it('should filter by protocol (include)', () => {
@@ -68,7 +81,7 @@ describe('Node Cleaner Utils', () => {
             const rules = buildRuleSet(ruleText);
             const result = filterNodeObjects(nodes, rules, 'include');
             expect(result).toHaveLength(2);
-            expect(result.map(n => n.protocol)).toEqual(expect.arrayContaining(['vmess', 'ss']));
+            expect(result.map((n) => n.protocol)).toEqual(expect.arrayContaining(['vmess', 'ss']));
         });
 
         it('should filter by name regex (exclude)', () => {
@@ -77,7 +90,7 @@ describe('Node Cleaner Utils', () => {
             const result = filterNodeObjects(nodes, rules, 'exclude');
             // Should exclude 'US Node 1' and 'US Premium'
             expect(result).toHaveLength(2);
-            expect(result.find(n => n.name.includes('US'))).toBeUndefined();
+            expect(result.find((n) => n.name.includes('US'))).toBeUndefined();
         });
 
         it('should handle complex rules', () => {
@@ -90,6 +103,21 @@ describe('Node Cleaner Utils', () => {
             const result = filterNodeObjects(nodes, rules, 'include');
             // Trojan (JP Node 3) + HK (HK Node 2)
             expect(result).toHaveLength(2);
+        });
+
+        it('should treat keep-prefixed protocol rules as include rules when parsing mixed text', () => {
+            const nodesWithHy2 = [
+                { protocol: 'vless', name: 'HK VLESS' },
+                { protocol: 'hysteria2', name: 'HK Hysteria2' },
+            ];
+            const { includeRules, excludeRules } = parseFilterRuleText('keep:proto:vless');
+
+            let result = nodesWithHy2;
+            if (includeRules.hasRules) result = filterNodeObjects(result, includeRules, 'include');
+            if (excludeRules.hasRules) result = filterNodeObjects(result, excludeRules, 'exclude');
+
+            expect(result).toHaveLength(1);
+            expect(result[0].protocol).toBe('vless');
         });
     });
 });

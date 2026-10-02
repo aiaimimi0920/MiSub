@@ -1,12 +1,42 @@
 import {
     getCache,
     triggerBackgroundRefresh,
-    createCacheHeaders
+    createCacheHeaders,
+    isLikelyPartialAggregateNodeList,
 } from '../../services/node-cache-service.js';
 
-// 简单的内存防抖 Map（用于同一 Worker 实例下的并发控制）
 const refreshDebounce = new Map();
-const DEBOUNCE_TIME = 10000; // 10秒防抖
+const DEBOUNCE_TIME = 10000;
+
+function countCachedNodes(cachedData) {
+    const declaredCount = Number(cachedData?.nodeCount);
+    if (Number.isFinite(declaredCount)) return declaredCount;
+    return String(cachedData?.nodes || '')
+        .split('\n')
+        .filter((line) => line.trim()).length;
+}
+
+function hasUsableCachedNodes(cachedData) {
+    return Boolean(String(cachedData?.nodes || '').trim()) && countCachedNodes(cachedData) > 0;
+}
+
+function isCacheFarBelowExpected(cachedData, expectedNodeCount) {
+    const expected = Number(expectedNodeCount);
+    if (!Number.isFinite(expected) || expected < 10) return false;
+    const cached = countCachedNodes(cachedData);
+    return cached / expected < 0.3;
+}
+
+function populateCachedStats(context, cachedNodeCount, targetMisubsCount) {
+    if (!context) return;
+    context.generationStats = {
+        totalNodes: cachedNodeCount,
+        sourceCount: targetMisubsCount,
+        successCount: cachedNodeCount,
+        failCount: 0,
+        duration: 0,
+    };
+}
 
 export async function resolveNodeListWithCache({
     storageAdapter,
@@ -14,7 +44,8 @@ export async function resolveNodeListWithCache({
     forceRefresh,
     refreshNodes,
     context,
-    targetMisubsCount
+    targetMisubsCount,
+    expectedNodeCount = 0,
 }) {
     const { data: cachedData, status: cacheStatus } = forceRefresh
         ? { data: null, status: 'miss' }
@@ -22,51 +53,42 @@ export async function resolveNodeListWithCache({
 
     let combinedNodeList;
     let cacheHeaders = {};
+    const cacheLooksIncomplete =
+        cachedData &&
+        (isCacheFarBelowExpected(cachedData, expectedNodeCount) ||
+            isLikelyPartialAggregateNodeList(cachedData.nodes));
+    const canUseCachedData =
+        cachedData && hasUsableCachedNodes(cachedData) && !cacheLooksIncomplete;
 
-    if (cacheStatus === 'fresh' && cachedData) {
-        // 缓存新鲜：直接返回（当前策略下不会触发，因为 FRESH_TTL=0）
+    if (cacheLooksIncomplete) {
+        console.warn(
+            `[Cache] Ignoring incomplete cache ${cacheKey} (${countCachedNodes(cachedData)} cached vs ${expectedNodeCount} expected nodes)`
+        );
+    }
+
+    if (cacheStatus === 'fresh' && canUseCachedData) {
+        const cachedNodeCount = countCachedNodes(cachedData);
         combinedNodeList = cachedData.nodes;
-        cacheHeaders = createCacheHeaders('HIT', cachedData.nodeCount);
-
-        // [Stats Export] Populate generation stats from cache for deferred logging
-        if (context) {
-            context.generationStats = {
-                totalNodes: cachedData.nodeCount || 0,
-                sourceCount: targetMisubsCount,
-                successCount: cachedData.nodeCount || 0,
-                failCount: 0,
-                duration: 0
-            };
-        }
-    } else if ((cacheStatus === 'stale' || cacheStatus === 'expired') && cachedData) {
-        // 有缓存：立即返回缓存数据，同时后台刷新确保下次获取最新
+        cacheHeaders = createCacheHeaders('HIT', cachedNodeCount);
+        populateCachedStats(context, cachedNodeCount, targetMisubsCount);
+    } else if ((cacheStatus === 'stale' || cacheStatus === 'expired') && canUseCachedData) {
+        const cachedNodeCount = countCachedNodes(cachedData);
         combinedNodeList = cachedData.nodes;
-        cacheHeaders = createCacheHeaders(`REFRESHING`, cachedData.nodeCount);
+        cacheHeaders = createCacheHeaders('REFRESHING', cachedNodeCount);
 
-        // 内存防抖：如果最近 10 秒内已触发过刷新，则跳过
         const lastRun = refreshDebounce.get(cacheKey);
         if (!lastRun || Date.now() - lastRun > DEBOUNCE_TIME) {
             refreshDebounce.set(cacheKey, Date.now());
-            // 触发后台刷新，确保缓存始终是最新的
             triggerBackgroundRefresh(context, () => refreshNodes(true));
-        } else {
-            // console.debug('[Cache] Skipping background refresh due to debounce');
         }
 
-        // [Stats Export] Populate generation stats from cache for deferred logging
-        if (context) {
-            context.generationStats = {
-                totalNodes: cachedData.nodeCount || 0,
-                sourceCount: targetMisubsCount,
-                successCount: cachedData.nodeCount || 0,
-                failCount: 0,
-                duration: 0
-            };
-        }
+        populateCachedStats(context, cachedNodeCount, targetMisubsCount);
     } else {
-        // 无缓存（首次访问或缓存已过期）：同步获取并缓存
         combinedNodeList = await refreshNodes(false);
-        cacheHeaders = createCacheHeaders('MISS', combinedNodeList.split('\n').filter(l => l.trim()).length);
+        cacheHeaders = createCacheHeaders(
+            'MISS',
+            combinedNodeList.split('\n').filter((line) => line.trim()).length
+        );
     }
 
     return { combinedNodeList, cacheHeaders, cacheStatus };

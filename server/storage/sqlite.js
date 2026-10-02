@@ -166,6 +166,13 @@ class D1Database {
         this.db = db;
     }
 
+    async batch(statements) {
+        return this.db.transaction(() => statements.map(statement => {
+            const info = statement.stmt.run(...statement.params);
+            return { success: true, meta: { changes: info.changes, last_row_id: info.lastInsertRowid } };
+        }))();
+    }
+
     prepare(sql) {
         return new D1PreparedStatement(this.db.prepare(sql));
     }

@@ -103,7 +103,9 @@ function isStorageUnavailableError(error) {
     const message = String(error?.message || error || '').toLowerCase();
     return message.includes('kv storage is paused')
         || message.includes('storage is paused')
-        || message.includes('namespace is paused');
+        || message.includes('namespace is paused')
+        || message.includes('limit exceeded')
+        || message.includes('quota');
 }
 
 async function safeKvGet(kv, key) {
@@ -301,7 +303,7 @@ export function clashFix(content) {
             lines = content.split('\n');
         }
 
-        let result = "";
+        let result = '';
         for (let line of lines) {
             if (line.includes('type: wireguard')) {
                 const 备改内容 = `, mtu: 1280, udp: true`;
@@ -326,11 +328,24 @@ import { SYSTEM_CONSTANTS } from './config.js';
 export function getProcessedUserAgent(originalUserAgent, url = '') {
     if (!originalUserAgent) return originalUserAgent;
 
-    // CF-Workers-SUB的精华策略：
-    // 统一使用v2rayN UA获取订阅，绕过机场过滤同时保证获取完整节点
-    return SYSTEM_CONSTANTS.FETCHER_USER_AGENT;
-}
+    const rawUrl = typeof url === 'string' ? url : '';
+    try {
+        const parsedUrl = new URL(rawUrl);
+        const params = parsedUrl.searchParams;
+        if (params.has('clash') || params.get('target')?.toLowerCase() === 'clash') {
+            return 'clash-verge/v2.4.3';
+        }
+    } catch {
+        if (/[?&](?:clash(?:=|&|$)|target=clash(?:&|$))/i.test(rawUrl)) {
+            return 'clash-verge/v2.4.3';
+        }
+    }
 
+    // CF-Workers-SUB的精华策略：
+    // 默认使用 v2rayN UA 获取订阅，绕过多数机场过滤同时保证获取完整节点。
+    // 个别 Clash 专用链接（如 ?clash=2）会严格校验 UA，需要保留 Clash UA。
+    return 'v2rayN/7.23';
+}
 /**
  * 名称前缀辅助函数
  * @param {string} link - 节点链接
@@ -341,7 +356,8 @@ export function prependNodeName(link, prefix) {
     if (!prefix) return link;
     const appendToFragment = (baseLink, namePrefix) => {
         const hashIndex = baseLink.lastIndexOf('#');
-        const originalName = hashIndex !== -1 ? decodeURIComponent(baseLink.substring(hashIndex + 1)) : '';
+        const originalName =
+            hashIndex !== -1 ? decodeURIComponent(baseLink.substring(hashIndex + 1)) : '';
         const base = hashIndex !== -1 ? baseLink.substring(0, hashIndex) : baseLink;
         if (originalName.startsWith(namePrefix)) {
             return baseLink;
@@ -367,7 +383,7 @@ export function prependNodeName(link, prefix) {
             const newBase64Part = btoa(unescape(encodeURIComponent(newJsonString)));
             return 'vmess://' + newBase64Part;
         } catch (e) {
-            console.error("为 vmess 节点添加名称前缀失败，将回退到通用方法。", e);
+            console.error('为 vmess 节点添加名称前缀失败，将回退到通用方法。', e);
             return appendToFragment(link, prefix);
         }
     }
@@ -391,7 +407,7 @@ export function createTimeoutFetch(input, init = {}, timeout = 10000) {
     const { cf, ...requestInit } = init;
     const request = new Request(input, {
         ...requestInit,
-        signal: controller.signal
+        signal: controller.signal,
     });
     const fetchPromise = cf ? fetch(request, { cf }) : fetch(request);
 
@@ -411,11 +427,7 @@ export function createTimeoutFetch(input, init = {}, timeout = 10000) {
  * @returns {Promise<Response>} 响应
  */
 export async function retryFetch(input, init = {}, options = {}) {
-    const {
-        maxRetries = 3,
-        timeout = 10000,
-        baseDelay = 1000
-    } = options;
+    const { maxRetries = 3, timeout = 10000, baseDelay = 1000 } = options;
 
     let lastError;
 
@@ -432,17 +444,18 @@ export async function retryFetch(input, init = {}, options = {}) {
 
             // 计算延迟时间（指数退避）
             const delay = baseDelay * Math.pow(2, attempt);
-            console.warn(`[Retry] Request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms:`, error.message);
+            console.warn(
+                `[Retry] Request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms:`,
+                error.message
+            );
 
             // 等待延迟
-            await new Promise(resolve => setTimeout(resolve, delay));
+            await new Promise((resolve) => setTimeout(resolve, delay));
         }
     }
 
     throw lastError;
 }
-
-
 
 /**
  * 安全的存储操作包装器
@@ -472,7 +485,7 @@ export function log(level, message, data = null) {
         timestamp,
         level,
         message,
-        data
+        data,
     };
 
     switch (level) {
@@ -498,47 +511,25 @@ export function log(level, message, data = null) {
  * @returns {Promise<string>} 回调令牌
  */
 export async function getCallbackToken(env) {
-    const secret = await getCookieSecret(env);
+    const secret = env.COOKIE_SECRET || 'default-callback-secret';
     const encoder = new TextEncoder();
     const keyData = encoder.encode(secret);
-    const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const signature = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode('callback-static-data'));
-    return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
-}
-
-/**
- * 确保会话与分享 Token 不再退化为可预测默认值。
- * 有可用存储时会尽量持久化；没有持久化存储时仅保持当前运行时稳定。
- * @param {Object} storageAdapter
- * @param {Object} settings
- * @returns {Promise<Object>}
- */
-export async function ensureStableSettingsTokens(storageAdapter, settings) {
-    const next = { ...(settings || {}) };
-    let changed = false;
-
-    const mytoken = String(next.mytoken || '').trim();
-    if (!mytoken || mytoken === 'auto') {
-        next.mytoken = getRuntimeGeneratedSecret('mytoken');
-        changed = true;
-    }
-
-    const profileToken = String(next.profileToken || '').trim();
-    if (!profileToken || profileToken === 'profiles') {
-        next.profileToken = getRuntimeGeneratedSecret('profileToken');
-        changed = true;
-    }
-
-    if (changed && storageAdapter?.put) {
-        try {
-            await storageAdapter.put(KV_KEY_SETTINGS, next);
-            SettingsCache.clear();
-        } catch (error) {
-            console.warn('[Settings] Failed to persist generated tokens:', error?.message || error);
-        }
-    }
-
-    return next;
+    const cryptoKey = await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+    const signature = await crypto.subtle.sign(
+        'HMAC',
+        cryptoKey,
+        encoder.encode('callback-static-data')
+    );
+    return Array.from(new Uint8Array(signature))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+        .slice(0, 16);
 }
 
 /**
@@ -563,19 +554,34 @@ export function migrateConfigSettings(config) {
     if (migratedConfig.hasOwnProperty('enableTrafficNode')) {
         migratedConfig.enableTrafficNode = toBoolean(migratedConfig.enableTrafficNode);
     }
-    if (migratedConfig.hasOwnProperty('subConverterScv')) {
-        migratedConfig.subConverterScv = toBoolean(migratedConfig.subConverterScv);
+    // [Migration] 映射旧名到新名（如果新名不存在且旧名存在）
+    if (
+        !migratedConfig.hasOwnProperty('builtinSkipCertVerify') &&
+        migratedConfig.hasOwnProperty('transformBackendScv')
+    ) {
+        migratedConfig.builtinSkipCertVerify = toBoolean(migratedConfig.transformBackendScv);
     }
-    if (migratedConfig.hasOwnProperty('subConverterUdp')) {
-        migratedConfig.subConverterUdp = toBoolean(migratedConfig.subConverterUdp);
+    if (
+        !migratedConfig.hasOwnProperty('builtinEnableUdp') &&
+        migratedConfig.hasOwnProperty('transformBackendUdp')
+    ) {
+        migratedConfig.builtinEnableUdp = toBoolean(migratedConfig.transformBackendUdp);
+    }
+
+    if (migratedConfig.hasOwnProperty('builtinSkipCertVerify')) {
+        migratedConfig.builtinSkipCertVerify = toBoolean(migratedConfig.builtinSkipCertVerify);
+    }
+    if (migratedConfig.hasOwnProperty('builtinEnableUdp')) {
+        migratedConfig.builtinEnableUdp = toBoolean(migratedConfig.builtinEnableUdp);
     }
     if (migratedConfig.hasOwnProperty('builtinLoonSkipCertVerify')) {
-        migratedConfig.builtinLoonSkipCertVerify = toBoolean(migratedConfig.builtinLoonSkipCertVerify);
+        migratedConfig.builtinLoonSkipCertVerify = toBoolean(
+            migratedConfig.builtinLoonSkipCertVerify
+        );
     }
 
     return migratedConfig;
 }
-
 
 /**
  * 创建标准JSON响应
@@ -589,8 +595,8 @@ export function createJsonResponse(data, status = 200, headers = {}) {
         status,
         headers: {
             'Content-Type': 'application/json; charset=utf-8',
-            ...headers
-        }
+            ...headers,
+        },
     });
 }
 
@@ -643,6 +649,39 @@ export function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+export const JSON_BODY_LIMITS = {
+    auth: 16 * 1024,
+    small: 128 * 1024,
+    normal: 1024 * 1024,
+    large: 5 * 1024 * 1024,
+};
+
+export class RequestBodyTooLargeError extends Error {
+    constructor(limitBytes) {
+        super(`Request JSON body too large (max ${limitBytes} bytes)`);
+        this.name = 'RequestBodyTooLargeError';
+        this.status = 413;
+        this.code = 'REQUEST_BODY_TOO_LARGE';
+    }
+}
+
+export async function readJsonWithLimit(request, limitBytes = JSON_BODY_LIMITS.normal) {
+    const contentLength =
+        request?.headers?.get?.('Content-Length') || request?.headers?.get?.('content-length');
+    if (contentLength) {
+        const declaredBytes = Number(contentLength);
+        if (Number.isFinite(declaredBytes) && declaredBytes > limitBytes) {
+            throw new RequestBodyTooLargeError(limitBytes);
+        }
+    }
+
+    const text = await request.text();
+    if (new TextEncoder().encode(text).length > limitBytes) {
+        throw new RequestBodyTooLargeError(limitBytes);
+    }
+    return text ? JSON.parse(text) : {};
+}
+
 /**
  * 创建标准错误响应
  * @param {Error|string} error - 错误对象或错误消息
@@ -665,12 +704,15 @@ export function createErrorResponse(error, status = 500) {
         message = error;
     }
 
-    return createJsonResponse({
-        success: false,
-        error: message,
-        code,
-        details
-    }, status);
+    return createJsonResponse(
+        {
+            success: false,
+            error: message,
+            code,
+            details,
+        },
+        status
+    );
 }
 
 /**
@@ -690,4 +732,62 @@ export function migrateProfileIds(profiles) {
         }
     }
     return migrated;
+}
+
+/**
+ * 安全的 UTF-8 到 Base64 编码 (替代已弃用的 unescape/encodeURIComponent 方案)
+ */
+export function base64EncodeUtf8(str) {
+    if (!str) return '';
+    try {
+        const bytes = new TextEncoder().encode(str);
+        const binString = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+        return btoa(binString);
+    } catch (e) {
+        console.error('[Utils] base64EncodeUtf8 failed:', e);
+        return '';
+    }
+}
+
+/**
+ * 安全的 Base64 到 UTF-8 解码
+ */
+export function base64DecodeUtf8(base64) {
+    if (!base64) return '';
+    try {
+        const binString = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+        const bytes = Uint8Array.from(binString, (m) => m.charCodeAt(0));
+        return new TextDecoder().decode(bytes);
+    } catch (e) {
+        console.error('[Utils] base64DecodeUtf8 failed:', e);
+        return '';
+    }
+}
+
+export async function ensureStableSettingsTokens(storageAdapter, settings) {
+    const next = { ...(settings || {}) };
+    let changed = false;
+
+    const mytoken = String(next.mytoken || '').trim();
+    if (!mytoken || mytoken === 'auto') {
+        next.mytoken = getRuntimeGeneratedSecret('mytoken');
+        changed = true;
+    }
+
+    const profileToken = String(next.profileToken || '').trim();
+    if (!profileToken || profileToken === 'profiles') {
+        next.profileToken = getRuntimeGeneratedSecret('profileToken');
+        changed = true;
+    }
+
+    if (changed && storageAdapter?.put) {
+        try {
+            await storageAdapter.put(KV_KEY_SETTINGS, next);
+            SettingsCache.clear();
+        } catch (error) {
+            console.warn('[Settings] Failed to persist generated tokens:', error?.message || error);
+        }
+    }
+
+    return next;
 }

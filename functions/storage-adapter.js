@@ -7,7 +7,7 @@
 // 存储类型常量
 export const STORAGE_TYPES = {
     KV: 'kv',
-    D1: 'd1'
+    D1: 'd1',
 };
 
 function normalizeStorageType(value) {
@@ -17,11 +17,90 @@ function normalizeStorageType(value) {
 
 // 数据键映射
 export const DATA_KEYS = {
+    CRON_LAST_EXECUTION: 'cron_last_execution',
     SUBSCRIPTIONS: 'misub_subscriptions_v1',
     PROFILES: 'misub_profiles_v1',
     SETTINGS: 'worker_settings_v1',
-    CRON_LAST_EXECUTION: 'cron_last_execution'
+    PROFILE_DOWNLOAD_COUNT_PREFIX: 'misub_profile_download_count_',
 };
+
+const D1_COLLECTION_CACHE_TTL_MS = 30 * 1000;
+const d1CollectionCaches = new WeakMap();
+
+function getD1CollectionCache(database) {
+    let cache = d1CollectionCaches.get(database);
+    if (!cache) {
+        cache = new Map();
+        d1CollectionCaches.set(database, cache);
+    }
+    return cache;
+}
+
+function invalidateD1CollectionCache(database, table) {
+    getD1CollectionCache(database).delete(table);
+}
+
+async function readCachedD1Collection(database, table, loader) {
+    const cache = getD1CollectionCache(database);
+    const now = Date.now();
+    const existing = cache.get(table);
+    if (existing && now - existing.timestamp < D1_COLLECTION_CACHE_TTL_MS) {
+        return structuredClone(await existing.promise);
+    }
+
+    const promise = Promise.resolve().then(loader);
+    cache.set(table, { timestamp: now, promise });
+    try {
+        return structuredClone(await promise);
+    } catch (error) {
+        if (cache.get(table)?.promise === promise) cache.delete(table);
+        throw error;
+    }
+}
+
+const D1_SCHEMA_STATEMENTS = [
+    `CREATE TABLE IF NOT EXISTS subscriptions (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE TABLE IF NOT EXISTS profiles (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_subscriptions_updated_at ON subscriptions(updated_at);`,
+    `CREATE INDEX IF NOT EXISTS idx_profiles_updated_at ON profiles(updated_at);`,
+    `CREATE INDEX IF NOT EXISTS idx_settings_updated_at ON settings(updated_at);`,
+];
+
+/**
+ * 以 settings 表为家的已知业务键。
+ * D1StorageAdapter._parseKey 靠它区分「预期的业务键」与「真正的未知 key」，
+ * 后者才告警。与 D1_MIGRATION_KEYS 保持一致。
+ */
+const D1_KNOWN_SETTINGS_KEYS = new Set([
+    'misub_dns_templates_v1',
+    'misub_rule_templates_v1',
+    'misub_clients_v1',
+    'misub_guestbook_v1',
+    'misub_settings_v1',
+    'misub_restore_snapshot_latest'
+]);
+
+async function ensureD1Schema(d1Db) {
+    for (const statement of D1_SCHEMA_STATEMENTS) {
+        await d1Db.prepare(statement).run();
+    }
+}
 
 /**
  * KV 存储适配器
@@ -29,6 +108,7 @@ export const DATA_KEYS = {
 class KVStorageAdapter {
     constructor(kvNamespace) {
         this.kv = kvNamespace;
+        this.type = STORAGE_TYPES.KV;
     }
 
     async get(key) {
@@ -76,6 +156,90 @@ class KVStorageAdapter {
             return [];
         }
     }
+
+    async getSubscriptionById(id) {
+        const all = await this.get(DATA_KEYS.SUBSCRIPTIONS);
+        return Array.isArray(all) ? all.find((item) => item.id === id) || null : null;
+    }
+
+    async getAllSubscriptions() {
+        const all = await this.get(DATA_KEYS.SUBSCRIPTIONS);
+        return Array.isArray(all) ? all : [];
+    }
+
+    async getProfileById(id) {
+        const all = await this.get(DATA_KEYS.PROFILES);
+        return Array.isArray(all)
+            ? all.find((item) => item.id === id || item.customId === id) || null
+            : null;
+    }
+
+    async getAllProfiles() {
+        const all = await this.get(DATA_KEYS.PROFILES);
+        return Array.isArray(all) ? all : [];
+    }
+
+    async updateSubscriptionById(id, updater) {
+        const all = (await this.get(DATA_KEYS.SUBSCRIPTIONS)) || [];
+        const index = all.findIndex((item) => item.id === id);
+        if (index === -1) return null;
+        const updated = updater({ ...all[index] });
+        all[index] = updated;
+        await this.put(DATA_KEYS.SUBSCRIPTIONS, all);
+        return updated;
+    }
+
+    async putSubscription(item) {
+        const all = await this.getAllSubscriptions();
+        const index = all.findIndex((entry) => entry.id === item.id);
+        if (index === -1) {
+            all.push(item);
+        } else {
+            all[index] = item;
+        }
+        await this.put(DATA_KEYS.SUBSCRIPTIONS, all);
+        return item;
+    }
+
+    async deleteSubscriptionById(id) {
+        const all = await this.getAllSubscriptions();
+        const filtered = all.filter((item) => item.id !== id);
+        await this.put(DATA_KEYS.SUBSCRIPTIONS, filtered);
+        return filtered.length !== all.length;
+    }
+
+    async putProfile(item) {
+        const all = await this.getAllProfiles();
+        const index = all.findIndex((entry) => entry.id === item.id);
+        if (index === -1) {
+            all.push(item);
+        } else {
+            all[index] = item;
+        }
+        await this.put(DATA_KEYS.PROFILES, all);
+        return item;
+    }
+
+    async deleteProfileById(id) {
+        const all = await this.getAllProfiles();
+        const filtered = all.filter((item) => item.id !== id);
+        await this.put(DATA_KEYS.PROFILES, filtered);
+        return filtered.length !== all.length;
+    }
+
+    async getSubscriptionsByIds(ids = []) {
+        const all = (await this.get(DATA_KEYS.SUBSCRIPTIONS)) || [];
+        const idSet = new Set(ids);
+        return all.filter((item) => idSet.has(item.id));
+    }
+
+    async putAllSubscriptions(items) {
+        return this.put(DATA_KEYS.SUBSCRIPTIONS, items);
+    }
+
+    async putAllProfiles(items) {
+        return this.put(DATA_KEYS.PROFILES, items);
+    }
 }
 
 /**
@@ -84,16 +248,24 @@ class KVStorageAdapter {
 class D1StorageAdapter {
     constructor(d1Database) {
         this.db = d1Database;
+        this.type = STORAGE_TYPES.D1;
     }
 
     async get(key, type = 'json') {
+        if (key === DATA_KEYS.SUBSCRIPTIONS || key === DATA_KEYS.PROFILES) {
+            const items = key === DATA_KEYS.SUBSCRIPTIONS ? await this.getAllSubscriptions() : await this.getAllProfiles();
+            return type === 'json' ? items : JSON.stringify(items);
+        }
         try {
             // 根据 key 确定查询的表和字段
-            const { table, queryField, queryValue, dataField } = this._parseKey(key);
+            const { table, queryField, queryValue } = this._parseKey(key);
 
-            const result = await this.db.prepare(
-                `SELECT ${dataField} as data FROM ${table} WHERE ${queryField} = ?`
-            ).bind(queryValue).first();
+            const result = await this.db
+                .prepare(
+                    `SELECT ${table === 'settings' ? 'value as data' : 'data'} FROM ${table} WHERE ${queryField} = ?`
+                )
+                .bind(queryValue)
+                .first();
 
             if (!result) return null;
 
@@ -103,28 +275,47 @@ class D1StorageAdapter {
             if (error.message && error.message.includes('no such table')) {
                 return null;
             }
-            throw new Error(`[D1] Failed to get key ${key}: ${error.message}`, { cause: error });
+            console.error(`[D1] Failed to get key ${key}:`, error);
+            return null;
         }
     }
 
     async put(key, value) {
+        if (key === DATA_KEYS.SUBSCRIPTIONS || key === DATA_KEYS.PROFILES) {
+            const items = typeof value === 'string' ? JSON.parse(value) : value;
+            return this.replaceCollection(key === DATA_KEYS.SUBSCRIPTIONS ? 'subscriptions' : 'profiles', items);
+        }
         try {
             const { table, queryField, queryValue } = this._parseKey(key);
             const data = typeof value === 'string' ? value : JSON.stringify(value);
 
             if (table === 'settings') {
                 // settings 表使用 key-value 结构
-                await this.db.prepare(`
+                await this.db
+                    .prepare(
+                        `
                     INSERT OR REPLACE INTO ${table} (key, value, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
-                `).bind(queryValue, data).run();
+                `
+                    )
+                    .bind(queryValue, data)
+                    .run();
             } else {
-                await this.db.prepare(`
+                // subscriptions 和 profiles 表使用 id-data 结构
+                await this.db
+                    .prepare(
+                        `
                     INSERT OR REPLACE INTO ${table} (id, data, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
-                `).bind(queryValue, data).run();
+                `
+                    )
+                    .bind(queryValue, data)
+                    .run();
             }
 
+            if (table === 'subscriptions' || table === 'profiles') {
+                invalidateD1CollectionCache(this.db, table);
+            }
             return true;
         } catch (error) {
             console.error(`[D1] Failed to put key ${key}:`, error);
@@ -132,14 +323,33 @@ class D1StorageAdapter {
         }
     }
 
+    async replaceCollection(table, items) {
+        if (!['subscriptions', 'profiles'].includes(table) || !Array.isArray(items)) throw new Error('Invalid collection');
+        const ids = new Set();
+        for (const item of items) {
+            if (!item?.id || item.id === 'main' || ids.has(item.id)) throw new Error('Invalid or duplicate collection id');
+            ids.add(item.id);
+        }
+        if (typeof this.db.batch !== 'function') throw new Error('Atomic D1 batch support required');
+        const statements = [this.db.prepare(`DELETE FROM ${table}`)];
+        for (const item of items) statements.push(this.db.prepare(`INSERT INTO ${table} (id, data) VALUES (?, ?)`).bind(item.id, JSON.stringify(item)));
+        await this.db.batch(statements);
+        invalidateD1CollectionCache(this.db, table);
+        return true;
+    }
+
     async delete(key) {
         try {
             const { table, queryField, queryValue } = this._parseKey(key);
 
-            await this.db.prepare(
-                `DELETE FROM ${table} WHERE ${queryField} = ?`
-            ).bind(queryValue).run();
+            await this.db
+                .prepare(`DELETE FROM ${table} WHERE ${queryField} = ?`)
+                .bind(queryValue)
+                .run();
 
+            if (table === 'subscriptions' || table === 'profiles') {
+                invalidateD1CollectionCache(this.db, table);
+            }
             return true;
         } catch (error) {
             console.error(`[D1] Failed to delete key ${key}:`, error);
@@ -154,7 +364,6 @@ class D1StorageAdapter {
                 { name: 'subscriptions', keyField: 'id' },
                 { name: 'profiles', keyField: 'id' },
                 { name: 'settings', keyField: 'key' },
-                { name: 'cron_executions', keyField: 'id' }
             ];
             const keys = [];
             const effectivePrefix = prefix || '';
@@ -162,35 +371,39 @@ class D1StorageAdapter {
                 DATA_KEYS.SUBSCRIPTIONS.startsWith(effectivePrefix) ||
                 DATA_KEYS.PROFILES.startsWith(effectivePrefix) ||
                 DATA_KEYS.SETTINGS.startsWith(effectivePrefix) ||
-                DATA_KEYS.CRON_LAST_EXECUTION.startsWith(effectivePrefix) ||
                 effectivePrefix.startsWith(DATA_KEYS.SUBSCRIPTIONS) ||
                 effectivePrefix.startsWith(DATA_KEYS.PROFILES) ||
-                effectivePrefix.startsWith(DATA_KEYS.SETTINGS) ||
-                effectivePrefix.startsWith(DATA_KEYS.CRON_LAST_EXECUTION);
+                effectivePrefix.startsWith(DATA_KEYS.SETTINGS);
 
-            const shouldQuerySubscriptions = !effectivePrefix || effectivePrefix.startsWith(DATA_KEYS.SUBSCRIPTIONS);
-            const shouldQueryProfiles = !effectivePrefix || effectivePrefix.startsWith(DATA_KEYS.PROFILES);
-            const shouldQuerySettings = !effectivePrefix || !matchesKnownKey || effectivePrefix.startsWith(DATA_KEYS.SETTINGS);
-            const shouldQueryCron = !effectivePrefix || effectivePrefix.startsWith(DATA_KEYS.CRON_LAST_EXECUTION);
+            const shouldQuerySubscriptions =
+                !effectivePrefix || effectivePrefix.startsWith(DATA_KEYS.SUBSCRIPTIONS);
+            const shouldQueryProfiles =
+                !effectivePrefix || effectivePrefix.startsWith(DATA_KEYS.PROFILES);
+            const shouldQuerySettings =
+                !effectivePrefix ||
+                !matchesKnownKey ||
+                effectivePrefix.startsWith(DATA_KEYS.SETTINGS);
 
             for (const table of tables) {
                 if (table.name === 'subscriptions' && !shouldQuerySubscriptions) continue;
                 if (table.name === 'profiles' && !shouldQueryProfiles) continue;
                 if (table.name === 'settings' && !shouldQuerySettings) continue;
-                if (table.name === 'cron_executions' && !shouldQueryCron) continue;
 
                 let results;
                 if (table.name === 'settings' && effectivePrefix) {
-                    results = await this.db.prepare(
-                        `SELECT ${table.keyField} FROM ${table.name} WHERE ${table.keyField} LIKE ?`
-                    ).bind(`${effectivePrefix}%`).all();
+                    results = await this.db
+                        .prepare(
+                            `SELECT ${table.keyField} FROM ${table.name} WHERE ${table.keyField} LIKE ?`
+                        )
+                        .bind(`${effectivePrefix}%`)
+                        .all();
                 } else {
-                    results = await this.db.prepare(
-                        `SELECT ${table.keyField} FROM ${table.name}`
-                    ).all();
+                    results = await this.db
+                        .prepare(`SELECT ${table.keyField} FROM ${table.name}`)
+                        .all();
                 }
 
-                results.results.forEach(row => {
+                results.results.forEach((row) => {
                     const key = this._buildKey(table.name, row[table.keyField]);
                     if (key.startsWith(effectivePrefix)) {
                         keys.push({ name: key });
@@ -205,22 +418,257 @@ class D1StorageAdapter {
         }
     }
 
+    async getSubscriptionById(id) {
+        try {
+            const result = await this.db
+                .prepare('SELECT data FROM subscriptions WHERE id = ?')
+                .bind(id)
+                .first();
+            if (result) return JSON.parse(result.data);
+
+            const legacyMain = await this.db
+                .prepare('SELECT data FROM subscriptions WHERE id = ?')
+                .bind('main')
+                .first();
+            if (!legacyMain) return null;
+            const parsed = JSON.parse(legacyMain.data);
+            return Array.isArray(parsed) ? parsed.find((item) => item.id === id) || null : null;
+        } catch (error) {
+            console.error(`[D1] Failed to get subscription ${id}:`, error);
+            return null;
+        }
+    }
+
+    async getAllSubscriptions() {
+        return readCachedD1Collection(this.db, 'subscriptions', async () => {
+            try {
+                const results = await this.db.prepare('SELECT data FROM subscriptions').all();
+                if (!Array.isArray(results?.results)) return [];
+
+                const all = [];
+                results.results.forEach((row) => {
+                    const parsed = JSON.parse(row.data);
+                    if (Array.isArray(parsed)) {
+                        all.push(...parsed);
+                    } else if (parsed) {
+                        all.push(parsed);
+                    }
+                });
+
+                const deduped = new Map();
+                all.forEach((item) => {
+                    if (item?.id) deduped.set(item.id, item);
+                });
+                return Array.from(deduped.values()).sort(
+                    (a, b) => (a.sortIndex || 0) - (b.sortIndex || 0)
+                );
+            } catch (error) {
+                invalidateD1CollectionCache(this.db, 'subscriptions');
+                console.error('[D1] Failed to get all subscriptions:', error);
+                return [];
+            }
+        });
+    }
+
+    async getProfileById(id) {
+        try {
+            const result = await this.db
+                .prepare('SELECT data FROM profiles WHERE id = ?')
+                .bind(id)
+                .first();
+            if (result) return JSON.parse(result.data);
+
+            const legacyMain = await this.db
+                .prepare('SELECT data FROM profiles WHERE id = ?')
+                .bind('main')
+                .first();
+            const allProfiles = legacyMain
+                ? JSON.parse(legacyMain.data)
+                : await this.get(DATA_KEYS.PROFILES);
+            return Array.isArray(allProfiles)
+                ? allProfiles.find((item) => item.id === id || item.customId === id) || null
+                : null;
+        } catch (error) {
+            console.error(`[D1] Failed to get profile ${id}:`, error);
+            return null;
+        }
+    }
+
+    async getAllProfiles() {
+        return readCachedD1Collection(this.db, 'profiles', async () => {
+            try {
+                const results = await this.db.prepare('SELECT data FROM profiles').all();
+                if (!Array.isArray(results?.results)) return [];
+
+                const all = [];
+                results.results.forEach((row) => {
+                    const parsed = JSON.parse(row.data);
+                    if (Array.isArray(parsed)) {
+                        all.push(...parsed);
+                    } else if (parsed) {
+                        all.push(parsed);
+                    }
+                });
+
+                const deduped = new Map();
+                all.forEach((item) => {
+                    if (item?.id) deduped.set(item.id, item);
+                });
+                return Array.from(deduped.values()).sort(
+                    (a, b) => (a.sortIndex || 0) - (b.sortIndex || 0)
+                );
+            } catch (error) {
+                invalidateD1CollectionCache(this.db, 'profiles');
+                console.error('[D1] Failed to get all profiles:', error);
+                return [];
+            }
+        });
+    }
+
+    async updateSubscriptionById(id, updater) {
+        const existing = await this.getSubscriptionById(id);
+        if (!existing) return null;
+        const updated = updater({ ...existing });
+        await this.db
+            .prepare(
+                `
+            INSERT OR REPLACE INTO subscriptions (id, data, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        `
+            )
+            .bind(id, JSON.stringify(updated))
+            .run();
+        invalidateD1CollectionCache(this.db, 'subscriptions');
+        return updated;
+    }
+
+    async putSubscription(item) {
+        await this.db
+            .prepare(
+                `
+            INSERT OR REPLACE INTO subscriptions (id, data, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        `
+            )
+            .bind(item.id, JSON.stringify(item))
+            .run();
+        invalidateD1CollectionCache(this.db, 'subscriptions');
+        return item;
+    }
+
+    async deleteSubscriptionById(id) {
+        const result = await this.db
+            .prepare('DELETE FROM subscriptions WHERE id = ?')
+            .bind(id)
+            .run();
+        invalidateD1CollectionCache(this.db, 'subscriptions');
+        return Boolean(result?.success);
+    }
+
+    async putProfile(item) {
+        await this.db
+            .prepare(
+                `
+            INSERT OR REPLACE INTO profiles (id, data, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        `
+            )
+            .bind(item.id, JSON.stringify(item))
+            .run();
+        invalidateD1CollectionCache(this.db, 'profiles');
+        return item;
+    }
+
+    async deleteProfileById(id) {
+        const result = await this.db.prepare('DELETE FROM profiles WHERE id = ?').bind(id).run();
+        invalidateD1CollectionCache(this.db, 'profiles');
+        return Boolean(result?.success);
+    }
+
+    async getSubscriptionsByIds(ids = []) {
+        if (!Array.isArray(ids) || ids.length === 0) return [];
+        // D1 单条 SQL 绑定变量上限为 100，超过会报
+        // "too many SQL variables" 而整条查询失败。
+        // 因此按 90 一批分片查询，再合并结果（同时保留原有 legacy 'main' 回退）。
+        const CHUNK_SIZE = 90;
+        const uniqueIds = Array.from(new Set(ids));
+        try {
+            const directHits = [];
+            for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
+                const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
+                const placeholders = chunk.map(() => '?').join(',');
+                const results = await this.db
+                    .prepare(`SELECT data FROM subscriptions WHERE id IN (${placeholders})`)
+                    .bind(...chunk)
+                    .all();
+                if (Array.isArray(results?.results)) {
+                    directHits.push(...results.results.map((row) => JSON.parse(row.data)));
+                }
+            }
+            const foundIds = new Set(directHits.map((item) => item?.id).filter(Boolean));
+            const missingIds = uniqueIds.filter((id) => !foundIds.has(id));
+
+            if (missingIds.length === 0) return directHits;
+
+            const legacyMain = await this.db
+                .prepare('SELECT data FROM subscriptions WHERE id = ?')
+                .bind('main')
+                .first();
+            if (!legacyMain) return directHits;
+
+            const parsed = JSON.parse(legacyMain.data);
+            if (!Array.isArray(parsed)) return directHits;
+
+            const legacyHits = parsed.filter((item) => missingIds.includes(item.id));
+            return [...directHits, ...legacyHits];
+        } catch (error) {
+            console.error('[D1] Failed to get subscriptions by ids:', error);
+            return [];
+        }
+    }
+
+    async putAllSubscriptions(items) {
+        if (!Array.isArray(items)) return false;
+        // 使用并行 Promise 提高效率
+        await Promise.all(items.map((item) => this.putSubscription(item)));
+        return true;
+    }
+
+    async putAllProfiles(items) {
+        if (!Array.isArray(items)) return false;
+        await Promise.all(items.map((item) => this.putProfile(item)));
+        return true;
+    }
+
     /**
      * 解析 key，确定对应的表、查询字段和查询值
      */
     _parseKey(key) {
+        if (key === DATA_KEYS.CRON_LAST_EXECUTION) return { table: 'cron_executions', queryField: 'id', queryValue: 'last' };
         if (key === DATA_KEYS.SUBSCRIPTIONS) {
-            return { table: 'subscriptions', queryField: 'id', queryValue: 'main', dataField: 'data' };
+            return { table: 'subscriptions', queryField: 'id', queryValue: 'main' };
         } else if (key === DATA_KEYS.PROFILES) {
-            return { table: 'profiles', queryField: 'id', queryValue: 'main', dataField: 'data' };
+            return { table: 'profiles', queryField: 'id', queryValue: 'main' };
         } else if (key === DATA_KEYS.SETTINGS) {
-            return { table: 'settings', queryField: 'key', queryValue: 'main', dataField: 'value' };
-        } else if (key === DATA_KEYS.CRON_LAST_EXECUTION) {
-            return { table: 'cron_executions', queryField: 'id', queryValue: 'last', dataField: 'data' };
+            return { table: 'settings', queryField: 'key', queryValue: 'main' };
         } else {
+            if (String(key).startsWith(DATA_KEYS.PROFILE_DOWNLOAD_COUNT_PREFIX)) {
+                return { table: 'settings', queryField: 'key', queryValue: key };
+            }
+            if (String(key).startsWith('tmp_external_nodes:')) {
+                return { table: 'settings', queryField: 'key', queryValue: key };
+            }
+            if (String(key).startsWith('misub_guestbook_v1')) {
+                return { table: 'settings', queryField: 'key', queryValue: key };
+            }
+            // 这些业务键本来就以 settings 表为家（KV→D1 迁移会主动写它们），
+            // 不该走下面那条「未知格式」告警，否则真正的异常 key 会被噪声淹掉。
+            if (D1_KNOWN_SETTINGS_KEYS.has(String(key))) {
+                return { table: 'settings', queryField: 'key', queryValue: key };
+            }
             // 处理其他格式的 key，默认作为 settings 表的 key，但记录警告
             console.warn(`[D1 Storage] Unknown key format: ${key}, treating as settings key`);
-            return { table: 'settings', queryField: 'key', queryValue: key, dataField: 'value' };
+            return { table: 'settings', queryField: 'key', queryValue: key };
         }
     }
 
@@ -234,8 +682,6 @@ class D1StorageAdapter {
             return DATA_KEYS.PROFILES;
         } else if (table === 'settings' && keyValue === 'main') {
             return DATA_KEYS.SETTINGS;
-        } else if (table === 'cron_executions' && keyValue === 'last') {
-            return DATA_KEYS.CRON_LAST_EXECUTION;
         } else {
             return keyValue;
         }
@@ -243,20 +689,45 @@ class D1StorageAdapter {
 }
 
 /**
- * 判断一个值是否像 KV namespace（有 get/put/delete 方法）
+ * 无存储降级适配器（无可用持久化存储时，不读写持久数据）
  */
-function isKVNamespace(val) {
-    return val && typeof val === 'object' &&
-        typeof val.get === 'function' &&
-        typeof val.put === 'function' &&
-        typeof val.delete === 'function';
+class NoopStorageAdapter {
+    async get() {
+        return null;
+    }
+    async put() {
+        return true;
+    }
+    async delete() {
+        return true;
+    }
+    async list() {
+        return [];
+    }
+    async getAllSubscriptions() {
+        return [];
+    }
+    async getAllProfiles() {
+        return [];
+    }
 }
 
 /**
- * 解析 KV 命名空间
- * EdgeOne Pages: KV 作为全局变量注入（globalThis.MISUB_KV），而非通过 env
- * Cloudflare Pages: KV 通过 env.MISUB_KV 注入
- * 同时支持自动探测，兼容任意绑定名
+ * 判断一个值是否像 KV namespace（有 get/put/delete 方法）
+ */
+function isKVNamespace(val) {
+    return (
+        val &&
+        typeof val === 'object' &&
+        typeof val.get === 'function' &&
+        typeof val.put === 'function' &&
+        typeof val.delete === 'function'
+    );
+}
+
+/**
+ * 解析 KV 命名空间。
+ * 优先读取 Cloudflare Pages 的 env 绑定，并兼容其他 env 中的 KV 绑定。
  * @param {Object} env
  * @returns {Object|null}
  */
@@ -264,10 +735,7 @@ function resolveKV(env) {
     // 1. Cloudflare Pages 方式：env.MISUB_KV
     if (env && isKVNamespace(env.MISUB_KV)) return env.MISUB_KV;
 
-    // 2. EdgeOne Pages 方式：KV 作为全局变量注入
-    if (typeof MISUB_KV !== 'undefined' && isKVNamespace(MISUB_KV)) return MISUB_KV;  // eslint-disable-line no-undef
-
-    // 3. 自动探测 env 中其他 KV 绑定（仅允许变量名包含 KV，避免误识别）
+    // 2. 自动探测 env 中其他 KV 绑定（仅允许变量名包含 KV，避免误识别）
     if (env) {
         for (const key of Object.keys(env)) {
             if (!String(key).toUpperCase().includes('KV')) continue;
@@ -278,27 +746,14 @@ function resolveKV(env) {
         }
     }
 
-    // 4. 自动探测 globalThis 中其他 KV 绑定（仅允许变量名包含 KV，避免误识别）
-    for (const key of Object.keys(globalThis)) {
-        if (key.startsWith('_') || key === 'globalThis') continue;
-        if (!String(key).toUpperCase().includes('KV')) continue;
-        try {
-            const val = globalThis[key];
-            if (isKVNamespace(val)) {
-                console.log(`[Storage] Auto-detected KV in globalThis: ${key}`);
-                return val;
-            }
-        } catch (_) { /* 忽略访问器异常 */ }
-    }
-
     return null;
 }
 
 let _globalSettingsCache = {
     data: null,
-    timestamp: 0
+    timestamp: 0,
 };
-const SETTINGS_CACHE_TTL_MS = 60 * 1000; // 60秒缓存过时
+const SETTINGS_CACHE_TTL_MS = 10 * 1000; // 10秒缓存过时
 
 export class SettingsCache {
     /**
@@ -306,7 +761,10 @@ export class SettingsCache {
      */
     static async get(env) {
         const now = Date.now();
-        if (_globalSettingsCache.data && (now - _globalSettingsCache.timestamp < SETTINGS_CACHE_TTL_MS)) {
+        if (
+            _globalSettingsCache.data &&
+            now - _globalSettingsCache.timestamp < SETTINGS_CACHE_TTL_MS
+        ) {
             return _globalSettingsCache.data;
         }
 
@@ -396,7 +854,7 @@ export class StorageFactory {
         }
 
         if (StorageFactory.resolveKV(env)) {
-            return STORAGE_TYPES.KV;
+            return env?.MISUB_DB ? STORAGE_TYPES.D1 : STORAGE_TYPES.KV;
         }
 
         return STORAGE_TYPES.D1;
@@ -411,14 +869,38 @@ export class StorageFactory {
     static async getStorageType(env) {
         try {
             const settings = await SettingsCache.get(env);
-            const configuredStorageType = normalizeStorageType(settings?.storageType);
-            if (configuredStorageType) {
-                return configuredStorageType;
+            if (settings?.storageType) {
+                return settings.storageType;
             }
-            return StorageFactory.getDefaultStorageType(env);
+            return env?.MISUB_DB ? STORAGE_TYPES.D1 : STORAGE_TYPES.KV;
         } catch (error) {
             console.error('[Storage] Failed to get storage type:', error);
-            return StorageFactory.getDefaultStorageType(env);
+            return env?.MISUB_DB ? STORAGE_TYPES.D1 : STORAGE_TYPES.KV;
+        }
+    }
+
+    /**
+     * 将 KV Settings 同步到 D1（当 D1 为空时）
+     */
+    static async ensureD1Settings(env) {
+        if (!env?.MISUB_DB) return false;
+        try {
+            const d1Adapter = new D1StorageAdapter(env.MISUB_DB);
+            const existing = await d1Adapter.get(DATA_KEYS.SETTINGS);
+            if (existing) return true;
+            const kvNs = resolveKV(env);
+            if (!kvNs) return false;
+            const raw = await kvNs.get(DATA_KEYS.SETTINGS);
+            if (!raw) return false;
+            const settings = JSON.parse(raw);
+            if (settings?.storageType !== STORAGE_TYPES.D1) {
+                settings.storageType = STORAGE_TYPES.D1;
+            }
+            await d1Adapter.put(DATA_KEYS.SETTINGS, settings);
+            return true;
+        } catch (error) {
+            console.warn('[Storage] ensureD1Settings failed:', error?.message || error);
+            return false;
         }
     }
 
@@ -433,6 +915,37 @@ export class StorageFactory {
 }
 
 /**
+ * KV → D1 需要搬运的业务键。
+ *
+ * 原实现只搬 subscriptions / profiles / settings 三个键，其余业务数据（DNS 模板、
+ * 规则模板、客户端、留言板……）留在 KV 里，迁移后按 storageType='d1' 读就全成空，
+ * 而接口仍返回「数据已成功迁移」。用户照官方引导解绑 KV 后就再也取不回。
+ *
+ * 刻意不搬的键，各有原因：
+ *   misub_webdav_backup_lock  —— 定时任务互斥锁，搬一个过期锁过去会挡住下次备份
+ *   misub_system_logs         —— 诊断日志，体积可能很大，非业务数据
+ *   misub_error_reports       —— 同上
+ *   misub_data_v1             —— 更早的遗留格式，由 api-router 的独立升级路径处理
+ */
+const D1_MIGRATION_KEYS = [
+    DATA_KEYS.SUBSCRIPTIONS,
+    DATA_KEYS.PROFILES,
+    'misub_dns_templates_v1',
+    'misub_rule_templates_v1',
+    'misub_clients_v1',
+    'misub_guestbook_v1',
+    'misub_settings_v1',
+    'misub_restore_snapshot_latest'
+];
+
+/** 需要按前缀枚举后逐条搬运的键 */
+const D1_MIGRATION_KEY_PREFIXES = [
+    DATA_KEYS.PROFILE_DOWNLOAD_COUNT_PREFIX
+];
+
+export { D1_MIGRATION_KEYS, D1_MIGRATION_KEY_PREFIXES };
+
+/**
  * 数据迁移工具
  */
 export class DataMigrator {
@@ -442,37 +955,150 @@ export class DataMigrator {
      * @returns {Promise<Object>} 迁移结果
      */
     static async migrateKVToD1(env) {
-        const kvNs = resolveKV(env);
-        if (!kvNs) throw new Error('No KV binding found');
-        if (!env.MISUB_DB) throw new Error('No D1 binding found');
-        const source = new KVStorageAdapter(kvNs);
-        const target = new D1StorageAdapter(env.MISUB_DB);
-        const results = { subscriptions: 'absent', profiles: 'absent', settings: 'absent', errors: [] };
-        const entries = [
-            ['subscriptions', DATA_KEYS.SUBSCRIPTIONS, value => value],
-            ['profiles', DATA_KEYS.PROFILES, value => value],
-            ['settings', DATA_KEYS.SETTINGS, value => ({ ...value, storageType: STORAGE_TYPES.D1 })]
-        ];
+        try {
+            const kvNs = resolveKV(env);
+            if (!kvNs) throw new Error('No KV binding found');
+            const kvAdapter = new KVStorageAdapter(kvNs);
+            const d1Adapter = new D1StorageAdapter(env.MISUB_DB);
+            await ensureD1Schema(d1Adapter.db);
 
-        for (const [label, key, transform] of entries) {
+            // keys: 逐键结果，'migrated' | 'empty' | 'failed'
+            const results = {
+                subscriptions: false,
+                profiles: false,
+                settings: false,
+                keys: {},
+                errors: [],
+            };
+
+            const copyKey = async key => {
+                try {
+                    let value = await kvAdapter.get(key);
+                    if (value === null || value === undefined) {
+                        results.keys[key] = 'empty';
+                        return false;
+                    }
+                    if (key === DATA_KEYS.SETTINGS) value = { ...value, storageType: STORAGE_TYPES.D1 };
+                    const existing = await d1Adapter.get(key);
+                    if (existing !== null && !(Array.isArray(existing) && existing.length === 0)) {
+                        if (JSON.stringify(existing) !== JSON.stringify(value)) {
+                            throw new Error('target contains different data');
+                        }
+                        results.keys[key] = 'verified';
+                        return 'verified';
+                    }
+                    await d1Adapter.put(key, value);
+                    if (JSON.stringify(await d1Adapter.get(key)) !== JSON.stringify(value)) {
+                        throw new Error('target verification failed');
+                    }
+                    results.keys[key] = 'migrated';
+                    return 'migrated';
+                } catch (error) {
+                    results.keys[key] = 'failed';
+                    const label = key === DATA_KEYS.SUBSCRIPTIONS ? 'subscriptions' : key === DATA_KEYS.PROFILES ? 'profiles' : key;
+                    results.errors.push(`${label}: ${error.message}`);
+                    return false;
+                }
+            };
+
+            for (const key of D1_MIGRATION_KEYS) {
+                const ok = await copyKey(key);
+                if (key === DATA_KEYS.SUBSCRIPTIONS) results.subscriptions = ok;
+                if (key === DATA_KEYS.PROFILES) results.profiles = ok;
+            }
+
+            // 前缀键：先枚举再逐条搬
+            for (const prefix of D1_MIGRATION_KEY_PREFIXES) {
+                try {
+                    const listed = await kvAdapter.list(prefix);
+                    for (const entry of listed) {
+                        const key = typeof entry === 'string' ? entry : entry?.name;
+                        if (key) await copyKey(key);
+                    }
+                } catch (error) {
+                    results.errors.push(`前缀 ${prefix} 枚举失败: ${error.message}`);
+                }
+            }
+
+            // settings 放在最后：storageType 要在其余数据都就位之后才翻成 d1，
+            // 否则中途失败会留下「已切 d1、数据还在 kv」的半迁移状态。
+            if (results.errors.length === 0) results.settings = await copyKey(DATA_KEYS.SETTINGS);
+
+            return results;
+        } catch (error) {
+            console.error('[Migration] Failed to migrate KV to D1:', error);
+            throw error;
+        }
+    }
+
+    static async migrateLegacyD1MainRows(env) {
+        if (!env?.MISUB_DB) throw new Error('D1 database not available');
+        const db = env.MISUB_DB;
+        if (typeof db.batch !== 'function') throw new Error('Atomic D1 batch support required');
+        const results = { subscriptions: 0, profiles: 0, errors: [] };
+        for (const table of ['subscriptions', 'profiles']) {
             try {
-                const sourceValue = await source.get(key);
-                if (sourceValue === null) continue;
-                const expected = transform(sourceValue);
-                const current = await target.get(key);
-                if (current !== null && JSON.stringify(current) !== JSON.stringify(expected)) {
-                    throw new Error('target contains different data');
+                const legacy = await db.prepare(`SELECT data FROM ${table} WHERE id = ?`).bind('main').first();
+                if (!legacy) continue;
+                const items = JSON.parse(legacy.data);
+                if (!Array.isArray(items)) throw new Error('legacy main is not an array');
+                const ids = new Set();
+                const inserts = [];
+                for (const item of items) {
+                    if (!item?.id || item.id === 'main' || ids.has(item.id)) throw new Error('invalid or duplicate legacy id');
+                    ids.add(item.id);
+                    const target = await db.prepare(`SELECT data FROM ${table} WHERE id = ?`).bind(item.id).first();
+                    const data = JSON.stringify(item);
+                    if (target && JSON.stringify(JSON.parse(target.data)) !== data) throw new Error('target contains different data');
+                    if (!target) inserts.push(db.prepare(`INSERT OR IGNORE INTO ${table} (id, data) VALUES (?, ?)`).bind(item.id, data));
                 }
-                if (current === null) await target.put(key, expected);
-                const verified = await target.get(key);
-                if (JSON.stringify(verified) !== JSON.stringify(expected)) {
-                    throw new Error('read-after-write verification failed');
+                if (inserts.length) await db.batch(inserts);
+                for (const item of items) {
+                    const target = await db.prepare(`SELECT data FROM ${table} WHERE id = ?`).bind(item.id).first();
+                    if (!target || JSON.stringify(JSON.parse(target.data)) !== JSON.stringify(item)) throw new Error('target verification failed');
                 }
-                results[label] = current === null ? 'migrated' : 'verified';
+                // Explicit migration only: retain the source if it changed during verification.
+                const removed = await db.prepare(`DELETE FROM ${table} WHERE id = ? AND data = ?`).bind('main', legacy.data).run();
+                if (removed?.meta?.changes !== 1) throw new Error('legacy main changed during migration');
+                results[table] = items.length;
             } catch (error) {
-                results.errors.push(`${label}: ${error.message}`);
+                results.errors.push(`${table}: ${error.message}`);
+            } finally {
+                invalidateD1CollectionCache(db, table);
             }
         }
         return results;
+    }
+
+    static async detectLegacyD1MainRows(env) {
+        if (!env?.MISUB_DB) {
+            return {
+                hasLegacySubscriptions: false,
+                hasLegacyProfiles: false,
+                hasLegacyData: false,
+            };
+        }
+
+        const d1Adapter = new D1StorageAdapter(env.MISUB_DB);
+        const [legacySubs, legacyProfiles] = await Promise.all([
+            d1Adapter.db
+                .prepare('SELECT data FROM subscriptions WHERE id = ?')
+                .bind('main')
+                .first(),
+            d1Adapter.db.prepare('SELECT data FROM profiles WHERE id = ?').bind('main').first(),
+        ]);
+
+        const hasLegacySubscriptions = Array.isArray(
+            legacySubs ? JSON.parse(legacySubs.data) : null
+        );
+        const hasLegacyProfiles = Array.isArray(
+            legacyProfiles ? JSON.parse(legacyProfiles.data) : null
+        );
+
+        return {
+            hasLegacySubscriptions,
+            hasLegacyProfiles,
+            hasLegacyData: hasLegacySubscriptions || hasLegacyProfiles,
+        };
     }
 }

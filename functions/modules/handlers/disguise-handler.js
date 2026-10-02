@@ -1,4 +1,3 @@
-
 import { StorageFactory } from '../../storage-adapter.js';
 import { KV_KEY_SETTINGS } from '../config.js';
 import { createDisguiseResponse } from '../disguise-page.js';
@@ -14,8 +13,8 @@ function normalizeLoginPath(customLoginPath) {
  * Handle Disguise Logic for Root and SPA paths.
  * Returns a Response if disguise should be effective (block access),
  * or null if access should be allowed (proceed to next handler/static asset).
- * 
- * @param {Object} context 
+ *
+ * @param {Object} context
  * @param {Object} [preloadedSettings] Optional, if already fetched
  * @returns {Promise<Response|null>}
  */
@@ -28,7 +27,10 @@ export async function handleDisguiseRequest(context, preloadedSettings = null) {
     if (!settings) {
         const { StorageFactory } = await import('../../storage-adapter.js');
         const { KV_KEY_SETTINGS } = await import('../config.js');
-        const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
+        const storageAdapter = StorageFactory.createAdapter(
+            env,
+            await StorageFactory.getStorageType(env)
+        );
         const settingsData = await storageAdapter.get(KV_KEY_SETTINGS);
         settings = settingsData || {};
     }
@@ -40,11 +42,14 @@ export async function handleDisguiseRequest(context, preloadedSettings = null) {
     // This bypasses the Disguise check.
     const customLoginPath = normalizeLoginPath(settings?.customLoginPath);
     const defaultLoginPath = '/login';
-    if (customLoginPath !== defaultLoginPath && url.pathname === defaultLoginPath) {
-        return new Response(null, {
-            status: 302,
-            headers: { Location: customLoginPath }
-        });
+    const hasCustomLoginPath = customLoginPath !== defaultLoginPath;
+
+    // [Fix #400] 当设置了自定义登录路径后，访问 /login 不应重定向到自定义路径，
+    // 否则会暴露隐藏的管理入口。直接返回 disguise 页面或 404。
+    if (hasCustomLoginPath && url.pathname === defaultLoginPath) {
+        const disguiseResponse = createDisguiseResponse(settings?.disguise, request.url);
+        if (disguiseResponse) return disguiseResponse;
+        return new Response('Not Found', { status: 404 });
     }
     if (url.pathname === customLoginPath) {
         return null; // Allow access to custom login path
@@ -68,7 +73,8 @@ export async function handleDisguiseRequest(context, preloadedSettings = null) {
     // [Public Page Logic]
     // If Public Page is enabled, we allow access to root '/' and '/explore'.
     // NOTE: We do NOT automatically allow /login here anymore if disguise is on.
-    const isPublicAccessAllowed = settings.enablePublicPage && (url.pathname === '/' || url.pathname === '/explore');
+    const isPublicAccessAllowed =
+        settings.enablePublicPage && (url.pathname === '/' || url.pathname === '/explore');
     if (isPublicAccessAllowed) {
         return null; // Allow access
     }
