@@ -119,7 +119,7 @@ describe('syncAggregatorArtifacts', () => {
             totalRemote: 2,
             discoveryCreated: 1,
             preservedDuplicates: 1,
-            discoveryDisabledMissing: 1,
+            discoveryDisabledMissing: 0,
             stableCreated: 1,
             publicProfileUpdated: 1,
             discoveryProbedCount: 1,
@@ -144,7 +144,7 @@ describe('syncAggregatorArtifacts', () => {
         expect(duplicateSource.options?.managed_by).toBeUndefined();
 
         const staleManagedSource = result.sources.find(item => item.id === 'managed-missing');
-        expect(staleManagedSource.enabled).toBe(false);
+        expect(staleManagedSource.enabled).toBe(true);
         expect(staleManagedSource.options.aggregator_missing).toBe(true);
 
         const stableSource = result.sources.find(item => item.input === 'https://sub.aiaimimi.com/subs/clash.yaml');

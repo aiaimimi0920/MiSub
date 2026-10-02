@@ -196,8 +196,8 @@ async function handleSyncNow() {
         </div>
         <div class="flex items-center justify-between p-4 bg-white/70 dark:bg-gray-900/50 border border-gray-200/70 dark:border-white/10 misub-radius-lg">
           <div>
-            <p class="text-sm font-medium text-gray-900 dark:text-gray-200">自动禁用缺失项</p>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">当某个托管源不再出现在最新 export 中时，将其自动标记为 disabled。</p>
+            <p class="text-sm font-medium text-gray-900 dark:text-gray-200">标记缺失来源，审核后清理</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">上游清单不再包含的托管订阅不会直接停用。独立维护任务验证链接与节点，仍可用则保留，确认不可用后删除；网络异常时保留待复查。</p>
           </div>
           <Switch v-model="aggregatorSyncConfig.autoDisableMissing" />
         </div>

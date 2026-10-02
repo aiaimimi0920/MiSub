@@ -455,16 +455,15 @@ export async function syncAggregatorArtifacts({
                 continue;
             }
 
-            if (source.enabled !== false || source?.options?.aggregator_missing !== true) {
+            // 上游遗漏不等于订阅失效。保留当前启用状态，由运行时健康审核决定退役。
+            if (source?.options?.aggregator_missing !== true) {
                 nextSources[index] = {
                     ...source,
-                    enabled: false,
                     options: {
                         ...(source.options || {}),
                         aggregator_missing: true
                     }
                 };
-                discoveryDisabledMissing += 1;
                 changedSources = true;
             }
         }
