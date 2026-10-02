@@ -9,6 +9,7 @@ import {
     SOURCE_PROBE_STATUS_VERIFIED,
     dedupeSources,
     isLikelyHTTPProxyInput,
+    isHTTPProxySource,
     normalizeSourceCollection,
     normalizeSourceItem,
     toManifestSource
@@ -68,7 +69,7 @@ function isManifestEffectiveSource(source) {
         return true;
     }
     if (normalized.kind === SOURCE_KIND_PROXY_URI && normalized.probe_status === SOURCE_PROBE_STATUS_SKIPPED) {
-        return isLikelyHTTPProxyInput(normalized.input);
+        return isHTTPProxySource(normalized) || isLikelyHTTPProxyInput(normalized.input);
     }
     return false;
 }
