@@ -7,6 +7,7 @@ import {
     SOURCE_PROBE_STATUS_UNREACHABLE,
     SOURCE_PROBE_STATUS_VERIFIED,
     isLikelyHTTPProxyInput,
+    isHTTPProxySource,
     normalizeSourceItem,
     shouldProbeSource
 } from '../../src/shared/source-utils.js';
@@ -110,7 +111,7 @@ async function probeSource(source, options = {}) {
     const now = new Date().toISOString();
     const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : fetch;
 
-    if (isLikelyHTTPProxyInput(normalized.input)) {
+    if (isHTTPProxySource(normalized) || isLikelyHTTPProxyInput(normalized.input)) {
         return withProbeMetadata(normalized, {
             probe_status: SOURCE_PROBE_STATUS_SKIPPED,
             detected_kind: SOURCE_KIND_PROXY_URI,
@@ -218,6 +219,13 @@ export async function enrichSourcesWithProbeMetadata(items, previousItems = [], 
     for (const item of Array.isArray(items) ? items : []) {
         const normalized = normalizeSourceItem(item);
         const previous = previousById.get(normalized.id);
+
+        // Explicit HTTP proxies are not subscription URLs. Do not reuse a
+        // failed subscription-style probe from an older classifier.
+        if (isHTTPProxySource(normalized)) {
+            results.push(await probeSourceItem(normalized, options));
+            continue;
+        }
 
         if (previous && isReusableProbe(previous, normalized)) {
             results.push(normalizeSourceItem(previous));

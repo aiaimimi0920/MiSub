@@ -125,6 +125,11 @@ export function isSubscriptionInput(value) {
   return !isLikelyHTTPProxyInput(trimmed);
 }
 
+export function isHTTPProxySource(item) {
+  const source = normalizeSourceItem(item);
+  return source.kind === SOURCE_KIND_PROXY_URI && /^https?:\/\//i.test(source.input);
+}
+
 export function isProxyURIInput(value) {
   const normalized = normalizeDirectProxyInput(value);
   if (!normalized) return false;
