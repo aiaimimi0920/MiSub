@@ -23,8 +23,11 @@ and other statuses fail execution. Before calling the reporter it requires
 bounded valid JSON, nonempty package inventory from the exact lock input, and
 agreement between vulnerability inventory and exit status. The reporter must
 return the matching 0/1 status and valid SARIF with the expected finding count.
-Only verified reports can upload; a vulnerability still fails the scan step
-while its SARIF uploads. The category preserves the previous OSV analysis key.
+Only verified reports can upload. Development workflows explicitly pass
+`--advisory`: valid vulnerability exit 1 becomes a successful finding report,
+while scanner/reporter exits and all findings remain recorded. Faults are never
+converted: unknown exits, missing/bad JSON, invalid inventory/SARIF and upload
+errors still fail. The OSV CLI's default mode retains vulnerability exit 1. The category preserves the previous OSV analysis key.
 There are zero exceptions and no ignore-unfixed filter.
 
 The upstream reporter can return 0 and empty SARIF for missing/bad JSON.
@@ -49,10 +52,12 @@ Checkout disables persisted credentials. Permissions are contents:read, plus
 actions:read and security-events:write for upload jobs.
 
 The summary separates finding metadata from diagnostic errors and failed
-invocations. After analysis uploads the complete SARIF, the repository enforces a finding
-gate: security severity >=7 or standard SARIF error level exits 1. Diagnostic or
-inventory failures exit 2 and stay distinct. All findings and counts remain
-visible; the gate counts even findings beyond the bounded summary output cap. Missing/invalid SARIF or upload errors
+invocations. Development CodeQL workflows use `--advisory` after uploading complete SARIF.
+Valid findings are reported without blocking the development check, including
+all High and standard error findings. `--fail-on-findings` remains the explicit
+strict mode: security severity >=7 or standard SARIF error level exits 1.
+Diagnostic/inventory failures exit 2 in both modes. Counts include findings
+beyond the bounded summary cap. Conflicting mode flags fail. Missing/invalid SARIF or upload errors
 fail their job. Summary counts are SARIF results, not deduplicated native alerts;
 source snippets, messages, and flows are omitted.
 
@@ -64,12 +69,26 @@ node --test scripts/tests/codeql-summary.test.mjs scripts/tests/security-inputs.
 ```
 
 On Windows set `PYTHON` to an available Python 3 executable for the Node tests.
-Real binary tests run through the pure dependency workflow, without production
-maintenance, deployment, publishing, signing, or secrets.
+Real binary tests run through the pure dependency workflow. The known vulnerable
+fixture proves raw scanner/reporter exit 1 and nonempty SARIF in both modes;
+strict returns 1 and advisory returns 0 only after all validations pass.
+Run `python3 scripts/tests/test_security_policy.py` for reporting policy checks.
 
 Repository files establish CI entrypoints, not native security settings.
 Dependabot alerts, dependency graph, automatic security updates, secret scanning,
-and protection settings were not changed. Native status has not been independently verified by this task. The local
-severity/error gate does not depend on reading native thresholds; enabling native
-switches alone does not prove equivalent protection. SARIF uploads succeeded in
+and protection settings were not changed. Native status has not been independently verified by this task. Development reports use `GITHUB_STEP_SUMMARY` and existing Security alerts with
+stable categories, so there is no new Issue/PR-comment write permission and no
+repeated automatic Issue creation. Summaries contain bounded counts/rule IDs,
+not source snippets, messages or credentials. Functional build/test steps and
+scanner/upload failure propagation remain intact. Native required checks or
+thresholds may act independently; this task does not change them. SARIF uploads succeeded in
 real CI, but upload-failure fault injection has not been executed.
+
+Development advisory is separate from publishing policy. Existing release and
+production workflow files are unchanged; strict scanning entrypoints remain
+available for their separately managed checks. This task runs no publication,
+deployment, signing or maintenance workflows.
+
+The existing docker-publish workflow logs in and pushes only when the repository
+is `imzyb/misub`. The `aiaimimi0920/MiSub` fork retains both guards and only
+builds on main pushes. A regression checks the exact login/push conditions.

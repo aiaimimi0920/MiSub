@@ -55,4 +55,4 @@ jobs:
           output: .tmp/codeql-results
       - name: Report bounded CodeQL finding inventory
         if: ${{ !cancelled() }}
-        run: python3 scripts/summarize_codeql_results.py .tmp/codeql-results --fail-on-findings
+        run: python3 scripts/summarize_codeql_results.py .tmp/codeql-results --advisory

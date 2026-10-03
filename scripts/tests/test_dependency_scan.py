@@ -9,7 +9,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dependency_scan import (BinaryRunner, ScanError, complete_scan, inventory,
-                             report, scan, validate_report, validate_sarif)
+                             report, scan, validate_report, validate_sarif, findings_exit)
 
 
 class RealBinaryTests(unittest.TestCase):
@@ -50,6 +50,8 @@ class RealBinaryTests(unittest.TestCase):
         self.assertTrue(facts["analysis_complete"])
         self.assertGreater(facts["package_count"], 0)
         self.assertEqual(facts["sarif_result_count"], 0)
+        self.assertEqual(findings_exit(facts), 0)
+        self.assertEqual(findings_exit(facts, advisory=True), 0)
         self.assertEqual(facts["extracted_package_count"], 2)
         self.assertEqual(facts["package_count"], 1)
         self.assertEqual(facts["go_module_inventory"], [{"name": "github.com/gogo/protobuf",
@@ -63,6 +65,10 @@ class RealBinaryTests(unittest.TestCase):
         self.assertEqual(facts["reporter_exit"], 1)
         self.assertGreater(facts["sarif_result_count"], 0)
         self.assertTrue(facts["report_valid"])
+        self.assertEqual(findings_exit(facts), 1)
+        self.assertEqual(findings_exit(facts, advisory=True), 0)
+        self.assertEqual(facts["scanner_exit"], 1)
+        self.assertEqual(facts["reporter_exit"], 1)
 
     def test_missing_json_reproduces_upstream_zero_but_guard_rejects_it(self):
         self.assertEqual(report(self.runner, "/evidence/missing.json"), 0)

@@ -17,6 +17,7 @@ from collections import Counter
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import unquote
+from security_report import ReportError, write_step_summary
 
 MAX_FILES = 50
 MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -391,7 +392,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = SafeArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--max-results", type=int, default=500)
-    parser.add_argument("--fail-on-findings", action="store_true")
+    policy = parser.add_mutually_exclusive_group()
+    policy.add_argument("--fail-on-findings", action="store_true")
+    policy.add_argument("--advisory", action="store_true")
     args = parser.parse_args(argv)
     try:
         report = summarize(args.directory, args.max_results)
@@ -430,6 +433,20 @@ def main(argv: list[str] | None = None) -> int:
     }
     if report["analysis_complete"] and args.fail_on_findings and blocked:
         report.update(error="security_findings", error_kind="finding_gate")
+    report.update(policy="development_advisory" if args.advisory else
+                  "strict" if args.fail_on_findings else "inventory_only",
+                  findings_present=report["result_count"] > 0,
+                  findings_exit=1 if blocked else 0,
+                  report_success=report["analysis_complete"]
+                  and (not args.fail_on_findings or blocked == 0))
+    if report["analysis_complete"]:
+        try:
+            write_step_summary("CodeQL", report)
+        except ReportError:
+            report.update(report_success=False, error_kind="reporting_failure",
+                          error="summary_write_failed")
+            print(json.dumps(report, ensure_ascii=True, sort_keys=True))
+            return 2
     print(json.dumps(report, ensure_ascii=True, sort_keys=True))
     if not report["analysis_complete"]:
         return 2

@@ -38,7 +38,8 @@ function payload(results = [result()]) {
   };
 }
 
-function inventory(documents, { maxResults, prepare, failOnFindings = false } = {}) {
+function inventory(documents, { maxResults, prepare, failOnFindings = false, advisory = false,
+  summary = false, brokenSummary = false } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codeql-summary-"));
   try {
     documents.forEach((document, index) => fs.writeFileSync(
@@ -48,15 +49,21 @@ function inventory(documents, { maxResults, prepare, failOnFindings = false } = 
     prepare?.(directory);
     const args = [script, directory];
     if (failOnFindings) args.push("--fail-on-findings");
+    if (advisory) args.push("--advisory");
+    const summaryPath = path.join(directory, "summary.md");
     if (maxResults !== undefined) args.push("--max-results", String(maxResults));
     const output = spawnSync(process.env.PYTHON || "python3", args, {
       encoding: "utf8", timeout: 10_000, maxBuffer: 1_000_000,
+      env: { ...process.env, GITHUB_STEP_SUMMARY: brokenSummary ? directory : summary ? summaryPath : "" },
     });
     assert.ifError(output.error);
     assert.equal(output.stderr, "");
     assert.ok(!output.stdout.includes(privateText));
     assert.ok(!output.stdout.includes(directory));
-    return { status: output.status, report: JSON.parse(output.stdout) };
+    const summaryText = summary && fs.existsSync(summaryPath) ? fs.readFileSync(summaryPath, "utf8") : "";
+    assert.ok(!summaryText.includes(privateText));
+    assert.ok(!summaryText.includes(directory));
+    return { status: output.status, report: JSON.parse(output.stdout), summaryText };
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
@@ -200,7 +207,7 @@ test("workflow preserves full scanning, source coverage and private SARIF bounda
     "language: javascript-typescript", "language: actions",
     "category: /language:${{ matrix.language }}", "output: .tmp/codeql-results",
     "node --test scripts/tests/codeql-summary.test.mjs",
-    "python3 scripts/summarize_codeql_results.py .tmp/codeql-results --fail-on-findings",
+    "python3 scripts/summarize_codeql_results.py .tmp/codeql-results --advisory",
     "if: ${{ !cancelled() }}", "security-events: write",
   ]) assert.ok(workflow.includes(required), `missing workflow contract: ${required}`);
   assert.ok(!workflow.includes("upload-artifact"));
@@ -287,4 +294,73 @@ test("diagnostic failures retain their separate classification with the finding 
   assert.equal(report.error_kind, "scanner_diagnostics");
   assert.equal(report.result_count, 1);
   assert.equal(report.finding_gate.passed, false);
+});
+
+for (const [label, document] of [
+  ["high findings", payload()],
+  ["standard errors", (() => {
+    const document = payload(); document.runs[0].results[0].level = "error";
+    document.runs[0].tool.driver.rules[0].properties = { "security-severity": "6.1" };
+    return document;
+  })()],
+]) test(`advisory reports ${label} without blocking valid analysis`, () => {
+  const { status, report, summaryText } = inventory([document], { advisory: true, summary: true });
+  assert.equal(status, 0);
+  assert.equal(report.policy, "development_advisory");
+  assert.equal(report.findings_exit, 1);
+  assert.equal(report.report_success, true);
+  assert.equal(report.finding_gate.enforced, false);
+  assert.equal(report.result_count, 1);
+  assert.equal(report.results.length, 1);
+  assert.ok(summaryText.includes("development advisory"));
+  assert.ok(summaryText.includes("js/path-injection"));
+});
+test("advisory zero findings also produces a successful report", () => {
+  const { status, report } = inventory([payload([])], { advisory: true });
+  assert.equal(status, 0);
+  assert.equal(report.findings_present, false);
+  assert.equal(report.report_success, true);
+});
+for (const [label, document] of [
+  ["malformed JSON", privateText],
+  ["missing execution", (() => { const p = payload(); delete p.runs[0].invocations; return p; })()],
+  ["failed invocation", (() => { const p = payload(); p.runs[0].invocations[0].executionSuccessful = false; return p; })()],
+]) test(`advisory cannot swallow ${label}`, () => {
+  const { status, report } = inventory([document], { advisory: true });
+  assert.equal(status, 2);
+  assert.equal(report.analysis_complete, false);
+});
+test("summary output failure remains a failure with findings retained", () => {
+  const { status, report } = inventory([payload()], { advisory: true, brokenSummary: true });
+  assert.equal(status, 2);
+  assert.equal(report.error_kind, "reporting_failure");
+  assert.equal(report.report_success, false);
+  assert.equal(report.result_count, 1);
+});
+test("conflicting strict/advisory policies fail rather than choose a weaker mode", () => {
+  const { status, report } = inventory([payload()], { advisory: true, failOnFindings: true });
+  assert.equal(status, 2);
+  assert.equal(report.error, "invalid_arguments");
+});
+
+test("advisory still fails on absent SARIF and diagnostic errors", () => {
+  assert.equal(inventory([], { advisory: true }).status, 2);
+  const document = payload();
+  document.runs[0].invocations[0].toolExecutionNotifications = [
+    { level: "error", message: { text: privateText } },
+  ];
+  const { status, report } = inventory([document], { advisory: true });
+  assert.equal(status, 2);
+  assert.equal(report.error_kind, "scanner_diagnostics");
+  assert.equal(report.result_count, 1);
+  assert.equal(report.report_success, false);
+});
+test("advisory counts all high findings beyond its emitted row cap", () => {
+  const { status, report } = inventory([payload([result(), result()])],
+    { advisory: true, maxResults: 1 });
+  assert.equal(status, 0);
+  assert.equal(report.findings_exit, 1);
+  assert.equal(report.result_count, 2);
+  assert.equal(report.finding_gate.blocked_result_count, 2);
+  assert.equal(report.omitted_count, 1);
 });

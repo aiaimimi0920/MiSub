@@ -32,6 +32,8 @@ jobs:
         run: docker pull ghcr.io/google/osv-scanner-action@sha256:dcd947131d8d11b8d0964de6590661fb921a4ecbd7b90a7cb21083acfc3fd8cc
       - name: Test real binary failure boundaries
         run: python3 scripts/tests/test_dependency_scan.py
+      - name: Test advisory and strict report boundaries
+        run: python3 scripts/tests/test_security_policy.py
       - name: Test fail-closed input and SARIF reporting
         run: node --test scripts/tests/codeql-summary.test.mjs scripts/tests/security-inputs.test.mjs
 
@@ -53,7 +55,7 @@ jobs:
         run: docker pull ghcr.io/google/osv-scanner-action@sha256:dcd947131d8d11b8d0964de6590661fb921a4ecbd7b90a7cb21083acfc3fd8cc
       - name: Scan and validate before reporting
         id: scan
-        run: python3 scripts/dependency_scan.py npm
+        run: python3 scripts/dependency_scan.py npm --advisory
       - name: Upload validated SARIF
         if: ${{ !cancelled() && steps.scan.outputs.report_valid == 'true' }}
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4

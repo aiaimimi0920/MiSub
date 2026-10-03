@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 
 from check_security_inputs import validate
+from security_report import ReportError, write_step_summary
 
 IMAGE = "ghcr.io/google/osv-scanner-action@sha256:dcd947131d8d11b8d0964de6590661fb921a4ecbd7b90a7cb21083acfc3fd8cc"
 VERSION = "2.5.1"
@@ -242,6 +243,23 @@ def complete_scan(runner: BinaryRunner, scanner_exit: int, lockfile: str) -> dic
     return validate_report(runner, facts, scanner_exit, report(runner))
 
 
+def findings_exit(facts: dict, advisory: bool = False) -> int:
+    require(facts.get("analysis_complete") is True and facts.get("report_valid") is True,
+            "incomplete_scan_cannot_be_advisory")
+    scanner_exit, reporter_exit = facts.get("scanner_exit"), facts.get("reporter_exit")
+    require(type(scanner_exit) is int and scanner_exit in {0, 1}
+            and type(reporter_exit) is int and reporter_exit == scanner_exit,
+            "unexpected_findings_exit")
+    count, expected = facts.get("sarif_result_count"), facts.get("expected_sarif_results")
+    require(type(count) is int and type(expected) is int and 0 <= count <= MAX_PACKAGES
+            and count == expected and bool(count) == (scanner_exit == 1),
+            "invalid_advisory_report")
+    facts.update(policy="development_advisory" if advisory else "strict",
+                 findings_present=scanner_exit == 1, findings_exit=scanner_exit,
+                 report_success=advisory or scanner_exit == 0)
+    return 0 if advisory else scanner_exit
+
+
 def set_upload_output(valid: bool) -> None:
     destination = os.environ.get("GITHUB_OUTPUT")
     if destination:
@@ -252,6 +270,7 @@ def set_upload_output(valid: bool) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ecosystem", choices=["gomod", "npm"])
+    parser.add_argument("--advisory", action="store_true")
     args = parser.parse_args()
     set_upload_output(False)
     try:
@@ -268,9 +287,16 @@ def main() -> int:
         lockfile = "go.mod" if args.ecosystem == "gomod" else "package-lock.json"
         scanner_exit = scan(runner, lockfile)
         facts = complete_scan(runner, scanner_exit, lockfile)
+        status = findings_exit(facts, args.advisory)
         set_upload_output(True)
+        write_step_summary("Dependency security", facts)
         print(json.dumps(facts, sort_keys=True))
-        return scanner_exit
+        return status
+    except ReportError:
+        facts.update(report_success=False, error_kind="reporting_failure",
+                     error="summary_write_failed")
+        print(json.dumps(facts, sort_keys=True))
+        return 2
     except ScanError as error:
         print(json.dumps({"analysis_complete": False, "report_valid": False,
                           "error_kind": "tool_or_artifact_failure", "error": str(error)}))
