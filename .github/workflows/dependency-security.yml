@@ -1,0 +1,46 @@
+name: Dependency Security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 18 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: dependency-security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify-inputs:
+    name: Validate scan inputs and synthetic regression fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Verify committed input inventory
+        run: python3 scripts/check_security_inputs.py npm
+      - name: Test fail-closed input and SARIF reporting
+        run: node --test scripts/tests/codeql-summary.test.mjs scripts/tests/security-inputs.test.mjs
+
+  osv:
+    name: Scan committed dependency locks
+    needs: verify-inputs
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@ffa0a5f39214d80778c9b494822d94d0d9668458 # OSV 2.5.1
+    with:
+      scan-args: |-
+        --lockfile=./package-lock.json
+      upload-sarif: true
+      fail-on-vuln: true
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
