@@ -62,6 +62,7 @@ def inventory(path: Path, scanner_exit: int, lockfile: str) -> dict:
             "missing_package_inventory")
     package_count = vulnerability_count = 0
     occurrences = set()
+    go_modules = set()
     for source in sources:
         require(isinstance(source, dict), "invalid_package_inventory")
         location = source.get("source")
@@ -79,6 +80,8 @@ def inventory(path: Path, scanner_exit: int, lockfile: str) -> dict:
             for field in ["name", "version", "ecosystem"]:
                 require(isinstance(package.get(field), str)
                         and 0 < len(package[field]) <= 512, "invalid_package_inventory")
+            if lockfile == "go.mod":
+                go_modules.add((package["name"], package["version"], package["ecosystem"]))
             vulnerabilities = entry.get("vulnerabilities", [])
             groups = entry.get("groups", [])
             require(isinstance(vulnerabilities, list) and isinstance(groups, list),
@@ -103,8 +106,13 @@ def inventory(path: Path, scanner_exit: int, lockfile: str) -> dict:
             require(identifiers <= grouped, "ungrouped_vulnerability_inventory")
             vulnerability_count += len(identifiers)
     require(bool(vulnerability_count) == (scanner_exit == 1), "scanner_result_mismatch")
-    return {"package_count": package_count, "vulnerability_records": vulnerability_count,
-            "expected_sarif_results": len(occurrences)}
+    facts = {"package_count": package_count, "vulnerability_records": vulnerability_count,
+             "expected_sarif_results": len(occurrences)}
+    if lockfile == "go.mod":
+        require(len(go_modules) <= 500, "result_limit_exceeded")
+        facts["go_module_inventory"] = [dict(zip(["name", "version", "ecosystem"], row))
+                                         for row in sorted(go_modules)]
+    return facts
 
 
 def validate_sarif(path: Path, expected: int) -> int:
@@ -205,7 +213,12 @@ def scan(runner: BinaryRunner, lockfile: str, extra: list[str] | None = None) ->
     if lockfile == "go.mod":
         arguments.append("--no-call-analysis=go")
     arguments.extend(extra or [])
-    return runner.execute("osv-scanner", arguments, offline=bool(extra))
+    status = runner.execute("osv-scanner", arguments, offline=bool(extra))
+    log = (runner.evidence / f"tool-{runner.counter}.log").read_bytes()[:MAX_BYTES]
+    match = re.search(rb"Scanned /github/workspace/" + re.escape(lockfile.encode())
+                      + rb" file and found ([0-9]+) packages", log)
+    runner.extracted_package_count = int(match.group(1)) if match else None
+    return status
 
 
 def report(runner: BinaryRunner, new: str = "/evidence/results.json") -> int:
@@ -225,6 +238,7 @@ def validate_report(runner: BinaryRunner, facts: dict, scanner_exit: int,
 
 def complete_scan(runner: BinaryRunner, scanner_exit: int, lockfile: str) -> dict:
     facts = inventory(runner.evidence / "results.json", scanner_exit, lockfile)
+    facts["extracted_package_count"] = getattr(runner, "extracted_package_count", None)
     return validate_report(runner, facts, scanner_exit, report(runner))
 
 

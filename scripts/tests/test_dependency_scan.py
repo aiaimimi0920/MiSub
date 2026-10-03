@@ -50,6 +50,10 @@ class RealBinaryTests(unittest.TestCase):
         self.assertTrue(facts["analysis_complete"])
         self.assertGreater(facts["package_count"], 0)
         self.assertEqual(facts["sarif_result_count"], 0)
+        self.assertEqual(facts["extracted_package_count"], 2)
+        self.assertEqual(facts["package_count"], 1)
+        self.assertEqual(facts["go_module_inventory"], [{"name": "github.com/gogo/protobuf",
+                         "version": "1.3.2", "ecosystem": "Go"}])
 
     def test_known_vulnerability_retains_exit_and_sarif(self):
         status = self.fixture("1.3.1")

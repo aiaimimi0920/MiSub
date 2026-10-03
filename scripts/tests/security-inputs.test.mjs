@@ -85,6 +85,13 @@ if (fs.existsSync(new URL("package.json", repositoryRoot))) {
   test("actual repository direct lock resolutions validate", () => {
     assert.equal(check("npm", { "package.json": actualManifest, "package-lock.json": actualLock }).status, 0);
   });
+  test("deleting actual transitive picocolors lock entry fails without changing declarations", () => {
+    const lock = JSON.parse(actualLock);
+    assert.ok(lock.packages["node_modules/postcss"].dependencies.picocolors);
+    delete lock.packages["node_modules/picocolors"];
+    assert.equal(check("npm", { "package.json": actualManifest,
+      "package-lock.json": JSON.stringify(lock) }).status, 2);
+  });
   test("deleting actual direct vue lock entry fails without changing declarations", () => {
     const lock = JSON.parse(actualLock);
     assert.ok(lock.packages["node_modules/vue"]);
@@ -93,6 +100,34 @@ if (fs.existsSync(new URL("package.json", repositoryRoot))) {
       "package-lock.json": JSON.stringify(lock) }).status, 2);
   });
 }
+
+const transitiveLock = () => ({ name: "fixture", lockfileVersion: 3, packages: {
+  "": { dependencies: { sample: "1.0.0" } },
+  "node_modules/sample": { version: "1.0.0", dependencies: { child: "^1.0.0" } },
+  "node_modules/child": { version: "1.0.0" },
+} });
+test("complete mandatory transitive lock graph validates", () => {
+  assert.equal(check("npm", { ...validNpm, "package-lock.json": JSON.stringify(transitiveLock()) }).status, 0);
+});
+for (const mode of ["missing", "incompatible version"]) test(`transitive ${mode} fails with unchanged declarations`, () => {
+  const lock = transitiveLock();
+  if (mode === "missing") delete lock.packages["node_modules/child"];
+  else lock.packages["node_modules/child"].version = "2.0.0";
+  assert.equal(check("npm", { ...validNpm, "package-lock.json": JSON.stringify(lock) }).status, 2);
+});
+for (const [label, optional, cpu, expected] of [
+  ["inapplicable optional platform subtree", true, ["wasm32"], 0],
+  ["inapplicable required platform", false, ["wasm32"], 2],
+  ["applicable optional subtree with missing mandatory child", true, [process.arch], 2],
+]) test(`native graph handles ${label}`, () => {
+  const field = optional ? "optionalDependencies" : "dependencies";
+  const declaration = { name: "fixture", [field]: { sample: "1.0.0" } };
+  const lock = { name: "fixture", lockfileVersion: 3, packages: { "": declaration,
+    "node_modules/sample": { version: "1.0.0", cpu, optional,
+      dependencies: { child: "1.0.0" } } } };
+  assert.equal(check("npm", { "package.json": JSON.stringify(declaration),
+    "package-lock.json": JSON.stringify(lock) }).status, expected);
+});
 
 test("dependency gate validates actual exits and artifacts before upload", () => {
   const workflow = fs.readFileSync(new URL("../../.github/workflows/dependency-security.yml", import.meta.url), "utf8");

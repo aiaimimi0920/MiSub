@@ -12,35 +12,34 @@ from pathlib import Path
 MAX_BYTES = 5 * 1024 * 1024
 
 
-def validate_npm_tree(root: Path) -> None:
+def validate_npm_tree(root: Path) -> dict:
     npm = shutil.which("npm")
     if npm is None:
         raise ValueError("native_npm_unavailable")
-    command = [npm]
-    if Path(npm).suffix.lower() in {".cmd", ".bat"}:
-        node = shutil.which("node")
-        if node is None:
-            raise ValueError("native_npm_unavailable")
+    node = shutil.which("node")
+    if node is None:
+        raise ValueError("native_npm_unavailable")
+    cli = Path(npm).resolve()
+    if cli.suffix.lower() in {".cmd", ".bat", ".ps1"}:
         cli = Path(node).resolve().parent / "node_modules/npm/bin/npm-cli.js"
-        if not cli.is_file():
-            raise ValueError("native_npm_unavailable")
-        command = [node, str(cli)]
+    if not cli.is_file() or cli.name != "npm-cli.js":
+        raise ValueError("native_npm_unavailable")
+    helper = Path(__file__).with_name("check_npm_lock.mjs")
     with tempfile.TemporaryDirectory(prefix="npm-input-check-") as cache:
         with tempfile.TemporaryFile() as output:
             result = subprocess.run(
-                [*command, "ls", "--package-lock-only", "--depth=0", "--json",
-                 "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
-                 "--cache", cache],
+                [node, str(helper), str(root.resolve()), str(cli), cache],
                 cwd=root, stdout=output, stderr=subprocess.DEVNULL, timeout=30,
                 check=False,
             )
             output.seek(0)
             raw = output.read(MAX_BYTES + 1)
     if result.returncode != 0 or len(raw) > MAX_BYTES:
-        raise ValueError("invalid_npm_direct_resolution")
+        raise ValueError("invalid_npm_lock_graph")
     report = json.loads(raw)
-    if not isinstance(report, dict) or report.get("problems"):
-        raise ValueError("invalid_npm_direct_resolution")
+    if not isinstance(report, dict) or report.get("graph_valid") is not True:
+        raise ValueError("invalid_npm_lock_graph")
+    return report
 
 
 def read_input(root: Path, name: str) -> str:
@@ -54,7 +53,7 @@ def read_input(root: Path, name: str) -> str:
     return raw.decode("utf-8")
 
 
-def validate(root: Path, ecosystem: str) -> list[str]:
+def validate(root: Path, ecosystem: str, graph_metadata: dict | None = None) -> list[str]:
     if ecosystem == "gomod":
         manifest = read_input(root, "go.mod")
         checksums = read_input(root, "go.sum").splitlines()
@@ -84,7 +83,9 @@ def validate(root: Path, ecosystem: str) -> list[str]:
         declared = manifest.get(field, {})
         if not isinstance(declared, dict) or packages[""].get(field, {}) != declared:
             raise ValueError("npm_manifest_lock_mismatch")
-    validate_npm_tree(root)
+    graph = validate_npm_tree(root)
+    if graph_metadata is not None:
+        graph_metadata.update(graph)
     return ["package.json", "package-lock.json"]
 
 
@@ -93,13 +94,17 @@ def main() -> int:
     parser.add_argument("ecosystem", choices=["gomod", "npm"])
     parser.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args()
+    graph_metadata = {}
     try:
-        inputs = validate(args.root, args.ecosystem)
+        inputs = validate(args.root, args.ecosystem, graph_metadata)
     except (OSError, UnicodeError, ValueError, TypeError, RecursionError,
             subprocess.SubprocessError):
         print(json.dumps({"inputs_valid": False, "error": "invalid_scan_inputs"}))
         return 2
-    print(json.dumps({"inputs_valid": True, "inputs": inputs}))
+    report = {"inputs_valid": True, "inputs": inputs}
+    if graph_metadata:
+        report["npm_graph"] = graph_metadata
+    print(json.dumps(report))
     return 0
 
 

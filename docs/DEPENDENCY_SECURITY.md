@@ -33,9 +33,14 @@ reproduce and reject those cases, abnormal scanner/reporter exits, zero inputs,
 and empty inventory, alongside healthy and known-vulnerability cases.
 The advisory fixture is GO-2021-0053 from OSV-Scanner's v2.5.1 test data; it is
 not a production exception. These binary tests are skipped outside hosted Linux.
-The shared npm validator also uses native offline lock-only npm resolution for
-direct dependencies, including alias, link, and optional dependency semantics.
-It does not install packages or validate every transitive subtree.
+The shared npm validator uses the existing npm's bundled Arborist to load the
+virtual lock graph offline, without installs or lifecycle scripts. It follows all
+applicable mandatory, peer, alias and linked resolutions, rejects missing or
+incompatible transitive entries and missing link targets, and uses npm's platform
+rules. Missing optional/optional-peer edges are allowed. Inapplicable optional
+OS/CPU/libc subtrees are skipped, while applicable optional packages must still
+have complete mandatory dependencies. This platform-specific graph check does
+not remove any packages or vulnerabilities from OSV's full lock scan.
 
 CodeQL scans JavaScript/TypeScript and GitHub Actions with security-extended
 queries and full-branch analysis. Both languages use no-build extraction. Language categories remain
@@ -44,8 +49,10 @@ Checkout disables persisted credentials. Permissions are contents:read, plus
 actions:read and security-events:write for upload jobs.
 
 The summary separates finding metadata from diagnostic errors and failed
-invocations. Analysis success does not assert zero findings or impose a severity
-gate. Findings remain visible for review. Missing/invalid SARIF or upload errors
+invocations. After analysis uploads the complete SARIF, the repository enforces a finding
+gate: security severity >=7 or standard SARIF error level exits 1. Diagnostic or
+inventory failures exit 2 and stay distinct. All findings and counts remain
+visible; the gate counts even findings beyond the bounded summary output cap. Missing/invalid SARIF or upload errors
 fail their job. Summary counts are SARIF results, not deduplicated native alerts;
 source snippets, messages, and flows are omitted.
 
@@ -62,6 +69,7 @@ maintenance, deployment, publishing, signing, or secrets.
 
 Repository files establish CI entrypoints, not native security settings.
 Dependabot alerts, dependency graph, automatic security updates, secret scanning,
-and protection settings were not changed. Native status is unverified: the
-connector workflow-list endpoint was unavailable and no existing gh executable
-was found in the local session.
+and protection settings were not changed. Native status has not been independently verified by this task. The local
+severity/error gate does not depend on reading native thresholds; enabling native
+switches alone does not prove equivalent protection. SARIF uploads succeeded in
+real CI, but upload-failure fault injection has not been executed.

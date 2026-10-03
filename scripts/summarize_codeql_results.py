@@ -391,6 +391,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = SafeArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--max-results", type=int, default=500)
+    parser.add_argument("--fail-on-findings", action="store_true")
     args = parser.parse_args(argv)
     try:
         report = summarize(args.directory, args.max_results)
@@ -418,8 +419,21 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2
+    blocked = sum(row["count"] for row in report["by_severity"]
+                  if row["level"] == "error" or (
+                      row["security_severity"] is not None
+                      and Decimal(row["security_severity"]) >= Decimal("7")))
+    report["finding_gate"] = {
+        "enforced": args.fail_on_findings, "security_severity_threshold": "7",
+        "standard_error_fails": True, "blocked_result_count": blocked,
+        "passed": report["analysis_complete"] and blocked == 0,
+    }
+    if report["analysis_complete"] and args.fail_on_findings and blocked:
+        report.update(error="security_findings", error_kind="finding_gate")
     print(json.dumps(report, ensure_ascii=True, sort_keys=True))
-    return 0 if report["analysis_complete"] else 2
+    if not report["analysis_complete"]:
+        return 2
+    return 1 if args.fail_on_findings and blocked else 0
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ function payload(results = [result()]) {
   };
 }
 
-function inventory(documents, { maxResults, prepare } = {}) {
+function inventory(documents, { maxResults, prepare, failOnFindings = false } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codeql-summary-"));
   try {
     documents.forEach((document, index) => fs.writeFileSync(
@@ -47,6 +47,7 @@ function inventory(documents, { maxResults, prepare } = {}) {
     ));
     prepare?.(directory);
     const args = [script, directory];
+    if (failOnFindings) args.push("--fail-on-findings");
     if (maxResults !== undefined) args.push("--max-results", String(maxResults));
     const output = spawnSync(process.env.PYTHON || "python3", args, {
       encoding: "utf8", timeout: 10_000, maxBuffer: 1_000_000,
@@ -199,7 +200,7 @@ test("workflow preserves full scanning, source coverage and private SARIF bounda
     "language: javascript-typescript", "language: actions",
     "category: /language:${{ matrix.language }}", "output: .tmp/codeql-results",
     "node --test scripts/tests/codeql-summary.test.mjs",
-    "python3 scripts/summarize_codeql_results.py .tmp/codeql-results",
+    "python3 scripts/summarize_codeql_results.py .tmp/codeql-results --fail-on-findings",
     "if: ${{ !cancelled() }}", "security-events: write",
   ]) assert.ok(workflow.includes(required), `missing workflow contract: ${required}`);
   assert.ok(!workflow.includes("upload-artifact"));
@@ -235,4 +236,55 @@ test("all CodeQL actions are immutable and Go extraction requires a build", () =
     assert.ok(workflow.includes("go test ./..."));
     assert.ok(workflow.includes("go build ./..."));
   }
+});
+
+for (const [label, severity, level, expected] of [
+  ["below high warning", "6.9", "warning", 0],
+  ["high threshold is inclusive", "7", "warning", 1],
+  ["high 7.8 is retained", "7.8", "warning", 1],
+  ["standard error below high", "6.1", "error", 1],
+  ["standard error without security severity", null, "error", 1],
+  ["warning without security severity", null, "warning", 0],
+]) test(`finding gate handles ${label}`, () => {
+  const document = payload();
+  document.runs[0].results[0].level = level;
+  document.runs[0].tool.driver.rules[0].properties =
+    severity === null ? {} : { "security-severity": severity };
+  const { status, report } = inventory([document], { failOnFindings: true });
+  assert.equal(status, expected);
+  assert.equal(report.analysis_complete, true);
+  assert.equal(report.result_count, 1);
+  assert.equal(report.results.length, 1);
+  assert.equal(report.finding_gate.blocked_result_count, expected);
+  assert.equal(report.finding_gate.passed, expected === 0);
+  if (expected) assert.equal(report.error_kind, "finding_gate");
+});
+test("empty completed analysis passes enforced finding gate", () => {
+  const { status, report } = inventory([payload([])], { failOnFindings: true });
+  assert.equal(status, 0);
+  assert.equal(report.finding_gate.passed, true);
+  assert.equal(report.result_count, 0);
+});
+test("high findings beyond emitted cap still fail while totals remain", () => {
+  const document = payload([result(), result()]);
+  document.runs[0].tool.driver.rules[0].properties = { "security-severity": "6.9" };
+  document.runs[0].tool.driver.rules.push({
+    id: "js/code-injection", properties: { "security-severity": "7.8" },
+  });
+  document.runs[0].results[1].ruleId = "js/code-injection";
+  const { status, report } = inventory([document], { maxResults: 1, failOnFindings: true });
+  assert.equal(status, 1);
+  assert.equal(report.result_count, 2);
+  assert.equal(report.omitted_count, 1);
+  assert.equal(report.finding_gate.blocked_result_count, 1);
+  assert.equal(report.by_rule.find(row => row.rule_id === "js/code-injection").count, 1);
+});
+test("diagnostic failures retain their separate classification with the finding gate", () => {
+  const document = payload();
+  document.runs[0].invocations[0].executionSuccessful = false;
+  const { status, report } = inventory([document], { failOnFindings: true });
+  assert.equal(status, 2);
+  assert.equal(report.error_kind, "scanner_diagnostics");
+  assert.equal(report.result_count, 1);
+  assert.equal(report.finding_gate.passed, false);
 });
