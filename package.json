@@ -17,7 +17,7 @@
     "start:vps": "node server/index.mjs"
   },
   "dependencies": {
-    "dompurify": "^3.2.6",
+    "dompurify": "^3.4.16",
     "js-yaml": "^4.1.0",
     "pinia": "^3.0.3",
     "qrcode": "^1.5.4",
