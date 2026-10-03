@@ -4,9 +4,43 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 MAX_BYTES = 5 * 1024 * 1024
+
+
+def validate_npm_tree(root: Path) -> None:
+    npm = shutil.which("npm")
+    if npm is None:
+        raise ValueError("native_npm_unavailable")
+    command = [npm]
+    if Path(npm).suffix.lower() in {".cmd", ".bat"}:
+        node = shutil.which("node")
+        if node is None:
+            raise ValueError("native_npm_unavailable")
+        cli = Path(node).resolve().parent / "node_modules/npm/bin/npm-cli.js"
+        if not cli.is_file():
+            raise ValueError("native_npm_unavailable")
+        command = [node, str(cli)]
+    with tempfile.TemporaryDirectory(prefix="npm-input-check-") as cache:
+        with tempfile.TemporaryFile() as output:
+            result = subprocess.run(
+                [*command, "ls", "--package-lock-only", "--depth=0", "--json",
+                 "--offline", "--ignore-scripts", "--no-audit", "--no-fund",
+                 "--cache", cache],
+                cwd=root, stdout=output, stderr=subprocess.DEVNULL, timeout=30,
+                check=False,
+            )
+            output.seek(0)
+            raw = output.read(MAX_BYTES + 1)
+    if result.returncode != 0 or len(raw) > MAX_BYTES:
+        raise ValueError("invalid_npm_direct_resolution")
+    report = json.loads(raw)
+    if not isinstance(report, dict) or report.get("problems"):
+        raise ValueError("invalid_npm_direct_resolution")
 
 
 def read_input(root: Path, name: str) -> str:
@@ -50,6 +84,7 @@ def validate(root: Path, ecosystem: str) -> list[str]:
         declared = manifest.get(field, {})
         if not isinstance(declared, dict) or packages[""].get(field, {}) != declared:
             raise ValueError("npm_manifest_lock_mismatch")
+    validate_npm_tree(root)
     return ["package.json", "package-lock.json"]
 
 
@@ -60,7 +95,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         inputs = validate(args.root, args.ecosystem)
-    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError,
+            subprocess.SubprocessError):
         print(json.dumps({"inputs_valid": False, "error": "invalid_scan_inputs"}))
         return 2
     print(json.dumps({"inputs_valid": True, "inputs": inputs}))

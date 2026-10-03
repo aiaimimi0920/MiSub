@@ -12,7 +12,8 @@ const validGo = { "go.mod": "module fixture\n\ngo 1.24.10\n",
   "go.sum": `example.invalid/dependency v1.0.0 h1:${"A".repeat(43)}=\n` };
 const validNpm = { "package.json": JSON.stringify({ name: "fixture", dependencies: { sample: "1.0.0" } }),
   "package-lock.json": JSON.stringify({ name: "fixture", lockfileVersion: 3,
-    packages: { "": { dependencies: { sample: "1.0.0" } } } }) };
+    packages: { "": { dependencies: { sample: "1.0.0" } },
+      "node_modules/sample": { version: "1.0.0" } } }) };
 
 function check(ecosystem, files, extra = []) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "scan-inputs-"));
@@ -20,7 +21,7 @@ function check(ecosystem, files, extra = []) {
     for (const [name, value] of Object.entries(files)) fs.writeFileSync(path.join(directory, name), value);
     const output = spawnSync(process.env.PYTHON || "python3",
       [script, ecosystem, "--root", directory, ...extra],
-      { encoding: "utf8", timeout: 10_000, maxBuffer: 1_000_000 });
+      { encoding: "utf8", timeout: 40_000, maxBuffer: 1_000_000 });
     assert.ifError(output.error);
     assert.ok(!(output.stdout + output.stderr).includes(privateText));
     return output;
@@ -56,17 +57,59 @@ test("oversized input is rejected", () => {
   assert.equal(check("gomod", { ...validGo, "go.sum": " ".repeat(5 * 1024 * 1024 + 1) }).status, 2);
 });
 
-test("dependency gate uses explicit inventory and fixed trusted reusable workflow", () => {
+test("declared direct dependency without its actual locked entry fails", () => {
+  const lock = JSON.parse(validNpm["package-lock.json"]);
+  delete lock.packages["node_modules/sample"];
+  assert.equal(check("npm", { ...validNpm, "package-lock.json": JSON.stringify(lock) }).status, 2);
+});
+
+for (const [label, manifest, packages] of [
+  ["alias", { dependencies: { alias: "npm:sample@1.0.0" } },
+    { "node_modules/alias": { name: "sample", version: "1.0.0" } }],
+  ["link", { dependencies: { sample: "file:packages/sample" } },
+    { "node_modules/sample": { resolved: "packages/sample", link: true },
+      "packages/sample": { name: "sample", version: "1.0.0" } }],
+  ["absent optional", { optionalDependencies: { sample: "1.0.0" } }, {}],
+]) test(`npm native lock semantics accept ${label}`, () => {
+  const fixture = { name: "fixture", version: "1.0.0", ...manifest };
+  const files = { "package.json": JSON.stringify(fixture),
+    "package-lock.json": JSON.stringify({ name: "fixture", version: "1.0.0",
+      lockfileVersion: 3, packages: { "": fixture, ...packages } }) };
+  assert.equal(check("npm", files).status, 0);
+});
+
+const repositoryRoot = new URL("../../", import.meta.url);
+if (fs.existsSync(new URL("package.json", repositoryRoot))) {
+  const actualManifest = fs.readFileSync(new URL("package.json", repositoryRoot), "utf8");
+  const actualLock = fs.readFileSync(new URL("package-lock.json", repositoryRoot), "utf8");
+  test("actual repository direct lock resolutions validate", () => {
+    assert.equal(check("npm", { "package.json": actualManifest, "package-lock.json": actualLock }).status, 0);
+  });
+  test("deleting actual direct vue lock entry fails without changing declarations", () => {
+    const lock = JSON.parse(actualLock);
+    assert.ok(lock.packages["node_modules/vue"]);
+    delete lock.packages["node_modules/vue"];
+    assert.equal(check("npm", { "package.json": actualManifest,
+      "package-lock.json": JSON.stringify(lock) }).status, 2);
+  });
+}
+
+test("dependency gate validates actual exits and artifacts before upload", () => {
   const workflow = fs.readFileSync(new URL("../../.github/workflows/dependency-security.yml", import.meta.url), "utf8");
   for (const text of [
-    "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@ffa0a5f39214d80778c9b494822d94d0d9668458",
-    "upload-sarif: true", "fail-on-vuln: true", "needs: verify-inputs",
+    "ghcr.io/google/osv-scanner-action@sha256:dcd947131d8d11b8d0964de6590661fb921a4ecbd7b90a7cb21083acfc3fd8cc",
+    "steps.scan.outputs.report_valid == 'true'", "needs: verify-inputs",
+    "python3 scripts/tests/test_dependency_scan.py",
+    "category: .github/workflows/dependency-security.yml:osv-scan",
     "security-events: write", "contents: read", "actions: read",
     "node --test scripts/tests/codeql-summary.test.mjs scripts/tests/security-inputs.test.mjs",
   ]) assert.ok(workflow.includes(text), `missing ${text}`);
-  assert.ok(/--lockfile=\.\/(?:go\.mod|package-lock\.json)/.test(workflow));
+  assert.ok(/python3 scripts\/dependency_scan\.py (?:gomod|npm)/.test(workflow));
+  const driver = fs.readFileSync(new URL("../dependency_scan.py", import.meta.url), "utf8");
+  for (const required of ["--lockfile=/github/workspace/", "--all-packages", "--fail-on-vuln=true"])
+    assert.ok(driver.includes(required), `missing ${required}`);
   for (const forbidden of ["ignore-unfixed", "--config", "continue-on-error", "secrets: inherit",
-    "pull_request_target", "workflow_call:", "contents: write", "category:"]) {
+    "pull_request_target", "workflow_call:", "contents: write", "osv-scanner-reusable.yml"]) {
     assert.ok(!workflow.includes(forbidden), `forbidden ${forbidden}`);
   }
   for (const line of workflow.matchAll(/uses:\s+(\S+)/g)) assert.match(line[1], /@[a-f0-9]{40}$/);
