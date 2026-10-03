@@ -27,17 +27,17 @@
     "better-sqlite3": "^11.5.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.18",
-    "@vitejs/plugin-vue": "^6.0.1",
-    "@vue/test-utils": "^2.4.6",
-    "happy-dom": "^20.0.11",
-    "miniflare": "^4.20250803.0",
-    "playwright": "^1.60.0",
-    "prettier": "^3.9.6",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/test-utils": "^2.5.1",
+    "happy-dom": "^20.14.5",
+    "miniflare": "^4.20260730.0",
+    "playwright": "^1.63.0",
+    "prettier": "^3.9.9",
     "tailwindcss": "^4.1.12",
-    "terser": "^5.48.0",
+    "terser": "^5.51.2",
     "vite": "^7.1.2",
     "vitest": "^4.0.16",
-    "wrangler": "^4.56.0"
+    "wrangler": "^4.141.0"
   }
 }
